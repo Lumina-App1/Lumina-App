@@ -25,18 +25,15 @@ class _TargetScreenState extends State<TargetScreen> {
     _initializeCamera();
   }
 
-  // =========================
-  // TTS SETUP (PERFECT)
-  // =========================
   Future<void> _setupTts() async {
     await _tts.setLanguage("en-US");
-    await _tts.setSpeechRate(0.45); // 🔥 REQUIRED SPEED
+    await _tts.setSpeechRate(0.45);
     await _tts.setVolume(1.0);
     await _tts.setPitch(1.0);
   }
 
   void _speak(String text) {
-    _tts.stop();        // clear previous
+    _tts.stop();
     _tts.speak(text);  // non-blocking
   }
 
@@ -64,13 +61,13 @@ class _TargetScreenState extends State<TargetScreen> {
   }
 
   // =========================
-  // PAUSE / RESUME (INSTANT)
+  // PAUSE / RESUME
   // =========================
   void _pauseResumeCamera() {
     if (_controller == null) return;
 
     setState(() {
-      isPaused = !isPaused; // ⚡ ICON CHANGES IMMEDIATELY
+      isPaused = !isPaused;
     });
 
     if (isPaused) {
@@ -85,19 +82,19 @@ class _TargetScreenState extends State<TargetScreen> {
   // =========================
   // STOP (SPEAK + NAVIGATE)
   // =========================
-  // instant stop
+
 
   void _stopCamera() async {
-    // 🔥 Make sure TTS completes
+    // Make sure TTS completes
     await _tts.awaitSpeakCompletion(true);
 
-    // 🔊 Speak full sentence
+
     await _tts.speak("Detection stopped returning to home screen");
 
-    // ⏳ Wait a little so audio engine fully releases
+    //  Wait a little so audio engine fully releases
     await Future.delayed(const Duration(milliseconds: 300));
 
-    // 🚀 Go back & tell home to speak
+    //  Go back to home
     Navigator.pop(context, true);
   }
 
@@ -145,7 +142,7 @@ class _TargetScreenState extends State<TargetScreen> {
       backgroundColor: const Color(0xFF0A0E21),
       body: Column(
         children: [
-          // ===== COMPACT HEADER =====
+
           Container(
             padding: const EdgeInsets.only(top: 35, bottom: 10),
             decoration: const BoxDecoration(
@@ -164,7 +161,7 @@ class _TargetScreenState extends State<TargetScreen> {
             ),
             child: Column(
               children: [
-                // Back button row - COMPACT
+
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 15),
                   child: Row(
@@ -205,7 +202,7 @@ class _TargetScreenState extends State<TargetScreen> {
 
                 const SizedBox(height: 10),
 
-                // Compact instruction
+
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Text(
@@ -248,7 +245,7 @@ class _TargetScreenState extends State<TargetScreen> {
             ),
           ),
 
-          // ===== COMPACT CONTROL PANEL =====
+
           Container(
             padding: const EdgeInsets.only(top: 10, bottom: 25, left: 30, right: 30),
             decoration: const BoxDecoration(
@@ -260,7 +257,7 @@ class _TargetScreenState extends State<TargetScreen> {
             ),
             child: Column(
               children: [
-                // Compact status indicator
+
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   decoration: BoxDecoration(

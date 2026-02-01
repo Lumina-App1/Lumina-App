@@ -36,13 +36,13 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
           showPermissionDialog();
         }
       } else {
-        speakWelcome(); // app open par bole
+        speakWelcome();
       }
     });
   }
 
   // =========================
-  // ROUTE AWARE (CORE FIX)
+  // ROUTE AWARE
   // =========================
   @override
   void didChangeDependencies() {
@@ -50,14 +50,14 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     routeObserver.subscribe(this, ModalRoute.of(context)! as PageRoute);
   }
 
-  // 🔥 Jab kisi screen se BACK ho kar Home aaye
+
   @override
   void didPopNext() {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // extra delay so previous TTS is DEAD
+
       await Future.delayed(const Duration(milliseconds: 500));
 
-      speakWelcome(); // 🔊 Home summary
+      speakWelcome();
     });
   }
 
@@ -139,31 +139,31 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     // Back button with visual enhancement
-                    // Container(
-                    //   decoration: BoxDecoration(
-                    //     color: Colors.white,
-                    //     borderRadius: BorderRadius.circular(12),
-                    //     boxShadow: [
-                    //       BoxShadow(
-                    //         color: Colors.black.withOpacity(0.05),
-                    //         blurRadius: 8,
-                    //         spreadRadius: 1,
-                    //       ),
-                    //     ],
-                    //   ),
-                    //   child: IconButton(
-                    //     icon: const Icon(
-                    //       Icons.arrow_back_ios_new_rounded,
-                    //       color: Color(0xFF1A237E),
-                    //       size: 22,
-                    //     ),
-                    //     onPressed: () {
-                    //       flutterTts.stop();
-                    //       Navigator.pop(context);
-                    //     },
-                    //   ),
-                    // ),
-                    const SizedBox(width: 48),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 8,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                      child: IconButton(
+                        icon: const Icon(
+                          Icons.arrow_back_ios_new_rounded,
+                          color: Color(0xFF1A237E),
+                          size: 22,
+                        ),
+                        onPressed: () {
+                          flutterTts.stop();
+                          Navigator.pop(context);
+                        },
+                      ),
+                    ),
+
                     // App Name in middle
                     const Text(
                       "LUMINA",
@@ -199,7 +199,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => const HelpScreen(fromSettings: false), // ✅
+                              builder: (_) => const HelpScreen(fromSettings: false),
                             ),
                           );
                         },
@@ -234,7 +234,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
 
                 const SizedBox(height: 8),
 
-                // SUBTITLE
+
                 const Text(
                   "How can I help you today?",
                   style: TextStyle(
@@ -246,12 +246,12 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
 
                 const SizedBox(height: 60),
 
-                // MAIN ACTION CARDS
+
                 Expanded(
                   child: SingleChildScrollView(
                     child: Column(
                       children: [
-                        // Object Detection Card
+
                         _buildFeatureCard(
                           title: "Object Detection",
                           subtitle: "Identify objects around you",
@@ -275,7 +275,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
 
                         const SizedBox(height: 24),
 
-                        // Target Search Card
+
                         _buildFeatureCard(
                           title: "Target Search",
                           subtitle: "Find specific items",
@@ -299,7 +299,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
 
                         const SizedBox(height: 24),
 
-                        // Settings Card
+
                         _buildFeatureCard(
                           title: "Settings",
                           subtitle: "Customize your experience",
@@ -323,7 +323,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
 
                         const SizedBox(height: 40),
 
-                        // VOICE GUIDANCE NOTE
+
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
@@ -473,24 +473,24 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                 ),
 
                 // Arrow indicator
-                // Padding(
-                //   padding: const EdgeInsets.only(right: 20),
-                //   child: Container(
-                //     width: 40,
-                //     height: 40,
-                //     decoration: BoxDecoration(
-                //       color: Colors.white.withOpacity(0.2),
-                //       shape: BoxShape.circle,
-                //     ),
-                //     child: const Center(
-                //       child: Icon(
-                //         Icons.arrow_forward_ios_rounded,
-                //         color: Colors.white,
-                //         size: 18,
-                //       ),
-                //     ),
-                //   ),
-                // ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 20),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ],

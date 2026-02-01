@@ -3,7 +3,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class HelpScreen extends StatefulWidget {
-  final bool fromSettings; // true if opened from Settings, false if from Home
+  final bool fromSettings;
 
   const HelpScreen({super.key, this.fromSettings = false});
 
@@ -15,7 +15,7 @@ class _HelpScreenState extends State<HelpScreen> {
   final FlutterTts flutterTts = FlutterTts();
   final ScrollController _scrollController = ScrollController();
 
-  double ttsVolume =0.5;
+  double ttsVolume = 0.5;
   String ttsLanguage = 'en-US';
   final double defaultTtsRate = 0.5;
 
@@ -101,14 +101,13 @@ class _HelpScreenState extends State<HelpScreen> {
 
   Future<void> _loadTtsSettings() async {
     final prefs = await SharedPreferences.getInstance();
-
+    ttsVolume = (prefs.getDouble('volume') ?? 100) / 100;
     ttsLanguage = prefs.getString('language') ?? 'en-US';
 
     await flutterTts.setLanguage(ttsLanguage);
     await flutterTts.setSpeechRate(defaultTtsRate);
-    await flutterTts.setVolume(1.0);
+    await flutterTts.setVolume(ttsVolume);
   }
-
 
   Future<void> _announceHelpPage() async {
     _isSpeaking = true;
@@ -116,7 +115,7 @@ class _HelpScreenState extends State<HelpScreen> {
     await flutterTts.speak(
         "You are on the Help screen. This app is voice operated. "
             "Here is guidance for all its features.");
-    await Future.delayed(const Duration(milliseconds: 100));
+    await Future.delayed(const Duration(milliseconds: 1500));
   }
 
   void _scrollToItem(int index) {
@@ -124,7 +123,7 @@ class _HelpScreenState extends State<HelpScreen> {
     if (key?.currentContext != null) {
       Scrollable.ensureVisible(
         key!.currentContext!,
-        duration: const Duration(milliseconds: 100),
+        duration: const Duration(milliseconds: 400),
         curve: Curves.easeInOut,
         alignment: 0.5,
       );

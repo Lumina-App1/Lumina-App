@@ -20,7 +20,7 @@ class _SplashScreenState extends State<SplashScreen> {
     // Speak welcome message as soon as splash screen shows
     _speakWelcome();
 
-    // Navigate after 3 seconds
+
     Timer(const Duration(seconds:5), () {
       Navigator.pushReplacement(
         context,
@@ -41,7 +41,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0E21), // Deep blue background
+      backgroundColor: const Color(0xFF0A0E21),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -57,7 +57,7 @@ class _SplashScreenState extends State<SplashScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // 🔵 ENHANCED LOGO CONTAINER WITH GLOW EFFECT
+
               Container(
                 width: 160,
                 height: 160,
@@ -81,7 +81,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(80),
                     child: Image.asset(
-                      'assets/lumina.png', // make sure this exists
+                      'assets/lumina.png',
                       width: 140,
                       height: 140,
                       fit: BoxFit.contain,
@@ -92,7 +92,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
               const SizedBox(height: 40),
 
-              // 🔵 APP NAME WITH GRADIENT TEXT
+
               ShaderMask(
                 shaderCallback: (bounds) {
                   return const LinearGradient(
@@ -117,7 +117,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
               const SizedBox(height: 12),
 
-              // 🔵 TAGLINE WITH BETTER TYPOGRAPHY
+
               const Text(
                 "Seeing Beyond Vision",
                 style: TextStyle(
@@ -130,7 +130,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
               const SizedBox(height: 60),
 
-              // 🔵 LOADING INDICATOR
+
               SizedBox(
                 width: 120,
                 child: LinearProgressIndicator(
@@ -145,7 +145,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
               const SizedBox(height: 20),
 
-              // 🔵 SUBTLE LOADING TEXT
+
               AnimatedOpacity(
                 opacity: 1.0,
                 duration: const Duration(milliseconds: 500),

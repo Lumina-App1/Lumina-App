@@ -17,7 +17,7 @@ class LUMINA extends StatelessWidget {
       title: 'Lumina',
       theme: ThemeData.dark(),
       home: const SplashScreen(),
-      navigatorObservers: [routeObserver], // 🔥 VERY IMPORTANT
+      navigatorObservers: [routeObserver],
     );
   }
 }

@@ -36,7 +36,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _initTts() async {
     await tts.setSpeechRate(0.45);
     await tts.setPitch(1.0);
-    await tts.setVolume(1.0);
+    await tts.setVolume(volume);
 
     _ttsReady = true;
 
@@ -78,7 +78,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       language = prefs.getString('language') ?? "English";
-      volume = prefs.getDouble('volume') ?? 1.0;
+      volume = prefs.getDouble('volume') ?? 0.5;
       highContrast = prefs.getBool('contrast') ?? false;
       largeText = prefs.getBool('largeText') ?? false;
     });

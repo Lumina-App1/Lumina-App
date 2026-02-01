@@ -21,7 +21,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
   @override
   void initState() {
     super.initState();
-    // Ensure TTS completes speaking before continuing
+
     _tts.awaitSpeakCompletion(true);
     _initTts();
     _initializeCamera();
@@ -29,7 +29,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
 
   Future<void> _initTts() async {
     await _tts.setLanguage("en-US");
-    await _tts.setSpeechRate(0.45); // Normal speed
+    await _tts.setSpeechRate(0.45);
     await _tts.setVolume(1.0);
     await _tts.setPitch(1.0);
   }
@@ -75,16 +75,16 @@ class _DetectionScreenState extends State<DetectionScreen> {
   }
 
   void _stopCamera() async {
-    // 🔥 Make sure TTS completes
+    //  Make sure TTS completes
     await _tts.awaitSpeakCompletion(true);
 
-    // 🔊 Speak full sentence
+
     await _tts.speak("Detection stopped returning to home screen");
 
-    // ⏳ Wait a little so audio engine fully releases
+    //  Wait a little so audio engine fully releases
     await Future.delayed(const Duration(milliseconds: 300));
 
-    // 🚀 Go back & tell home to speak
+    // Go back to home page
     Navigator.pop(context, true);
   }
 
@@ -129,7 +129,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
       backgroundColor: const Color(0xFF0A0E21),
       body: Column(
         children: [
-          // ===== COMPACT HEADER =====
+
           Container(
             padding: const EdgeInsets.only(top: 35, bottom: 10),
             decoration: const BoxDecoration(
@@ -148,7 +148,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
             ),
             child: Column(
               children: [
-                // Back button row - COMPACT
+
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 15),
                   child: Row(
@@ -189,7 +189,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
 
                 const SizedBox(height: 10),
 
-                // Compact instruction
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Text(
@@ -232,7 +231,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
             ),
           ),
 
-          // ===== COMPACT CONTROL PANEL =====
+
           Container(
             padding: const EdgeInsets.only(top: 10, bottom: 25, left: 30, right: 30),
             decoration: const BoxDecoration(
@@ -244,7 +243,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
             ),
             child: Column(
               children: [
-                // Compact status indicator
+
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   decoration: BoxDecoration(
@@ -341,7 +340,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
   }) {
     return Column(
       children: [
-        // Button with shadow and gradient
+
         InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(buttonSize / 2),

@@ -32,7 +32,6 @@ class _AboutScreenState extends State<AboutScreen> {
     },
     {'title': 'Developer', 'content': 'LuminaVision Technologies'},
     {'title': 'Contact', 'content': 'support@lumina12.com'},
-    {'title': 'Our Mission', 'content': 'To empower visually impaired individuals with technology that enhances independence,accessibility,and confidence in navigating the world around them'}
   ];
 
   late List<String> _sectionsText;
@@ -71,17 +70,17 @@ class _AboutScreenState extends State<AboutScreen> {
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await Future.delayed(const Duration(milliseconds: 100));
+      await Future.delayed(const Duration(milliseconds: 600));
       _startReadingAll();
     });
   }
 
   Future<void> _loadTtsSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    // ttsVolume = (prefs.getDouble('volume') ?? 100) / 100;
+    ttsVolume = (prefs.getDouble('volume') ?? 100) / 100;
     ttsLanguage = prefs.getString('language') ?? 'en-US';
 
-    await flutterTts.setVolume(1.0);
+    await flutterTts.setVolume(ttsVolume);
     await flutterTts.setSpeechRate(defaultTtsRate);
     await flutterTts.setLanguage(ttsLanguage);
   }
@@ -91,7 +90,7 @@ class _AboutScreenState extends State<AboutScreen> {
     if (key?.currentContext != null) {
       Scrollable.ensureVisible(
         key!.currentContext!,
-        duration: const Duration(milliseconds: 100),
+        duration: const Duration(milliseconds: 400),
         curve: Curves.easeInOut,
         alignment: 0.5,
       );
@@ -149,7 +148,7 @@ class _AboutScreenState extends State<AboutScreen> {
           ),
           child: Column(
             children: [
-              // ===== HEADER =====
+
               Container(
                 padding:
                 const EdgeInsets.only(top: 20, left: 20, right: 20, bottom: 20),
@@ -286,7 +285,6 @@ class _AboutScreenState extends State<AboutScreen> {
 
                     const SizedBox(height: 8),
 
-                    // Subtitle
                     Text(
                       "Seeing Beyond Vision",
                       style: TextStyle(
@@ -330,61 +328,61 @@ class _AboutScreenState extends State<AboutScreen> {
                       const SizedBox(height: 30),
 
                       // Mission Statement
-                      // Container(
-                      //   padding: const EdgeInsets.all(25),
-                      //   decoration: BoxDecoration(
-                      //     gradient: const LinearGradient(
-                      //       colors: [
-                      //         Color(0xFF1A237E),
-                      //         Color(0xFF3949AB),
-                      //       ],
-                      //       begin: Alignment.topLeft,
-                      //       end: Alignment.bottomRight,
-                      //     ),
-                      //     borderRadius: BorderRadius.circular(20),
-                      //     boxShadow: [
-                      //       BoxShadow(
-                      //         color: const Color(0xFF1A237E).withOpacity(0.3),
-                      //         blurRadius: 15,
-                      //         spreadRadius: 2,
-                      //         offset: const Offset(0, 4),
-                      //       ),
-                      //     ],
-                      //   ),
-                      //   child: Column(
-                      //     crossAxisAlignment: CrossAxisAlignment.start,
-                      //     children: [
-                      //       Row(
-                      //         children: [
-                      //           Icon(
-                      //             Icons.remove_red_eye_rounded,
-                      //             color: Colors.white,
-                      //             size: 28,
-                      //           ),
-                      //           const SizedBox(width: 12),
-                      //           Text(
-                      //             "Our Mission",
-                      //             style: TextStyle(
-                      //               color: Colors.white,
-                      //               fontSize: 22,
-                      //               fontWeight: FontWeight.w700,
-                      //             ),
-                      //           ),
-                      //         ],
-                      //       ),
-                      //       const SizedBox(height: 16),
-                      //       Text(
-                      //         "To empower visually impaired individuals with technology that enhances independence, accessibility, and confidence in navigating the world around them.",
-                      //         style: TextStyle(
-                      //           color: Colors.white.withOpacity(0.9),
-                      //           fontSize: 16,
-                      //           fontWeight: FontWeight.w400,
-                      //           height: 1.5,
-                      //         ),
-                      //       ),
-                      //     ],
-                      //   ),
-                      // ),
+                      Container(
+                        padding: const EdgeInsets.all(25),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [
+                              Color(0xFF1A237E),
+                              Color(0xFF3949AB),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF1A237E).withOpacity(0.3),
+                              blurRadius: 15,
+                              spreadRadius: 2,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.remove_red_eye_rounded,
+                                  color: Colors.white,
+                                  size: 28,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  "Our Mission",
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              "To empower visually impaired individuals with technology that enhances independence, accessibility, and confidence in navigating the world around them.",
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.9),
+                                fontSize: 16,
+                                fontWeight: FontWeight.w400,
+                                height: 1.5,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
 
                       const SizedBox(height: 40),
                     ],
