@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'home_screen.dart';
+import '../core/app_settings.dart';
+import '../core/app_localizations.dart';
 
 late List<CameraDescription> cameras;
 
@@ -15,28 +18,12 @@ class DetectionScreen extends StatefulWidget {
 class _DetectionScreenState extends State<DetectionScreen> {
   CameraController? _controller;
   bool isPaused = false;
-  final FlutterTts _tts = FlutterTts();
   bool _hasSpoken = false;
 
-  @override
-  void initState() {
-    super.initState();
-
-    _tts.awaitSpeakCompletion(true);
-    _initTts();
-    _initializeCamera();
-  }
-
-  Future<void> _initTts() async {
-    await _tts.setLanguage("en-US");
-    await _tts.setSpeechRate(0.45);
-    await _tts.setVolume(1.0);
-    await _tts.setPitch(1.0);
-  }
-
   Future<void> _speak(String text) async {
-    await _tts.stop(); // Stop any ongoing speech
-    _tts.speak(text); // Speak the new text
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    await settings.tts.stop();
+    settings.tts.speak(text);
   }
 
   Future<void> _initializeCamera() async {
@@ -54,20 +41,22 @@ class _DetectionScreenState extends State<DetectionScreen> {
 
       if (!_hasSpoken) {
         _hasSpoken = true;
-        await _speak("Live Detection Started."); // Waits until speaking finishes
+        final strings = AppLocalizations.of(context);
+        await _speak(strings.translate('live_detection_started'));
       }
     }
   }
 
   void _pauseResumeCamera() async {
     if (_controller == null) return;
+    final strings = AppLocalizations.of(context);
 
     if (isPaused) {
       await _controller!.resumePreview();
-      await _speak("Detection resumed"); // Waits until speaking finishes
+      await _speak(strings.translate('detection_resumed'));
     } else {
       await _controller!.pausePreview();
-      await _speak("Detection paused");
+      await _speak(strings.translate('detection_paused'));
     }
     setState(() {
       isPaused = !isPaused;
@@ -75,28 +64,40 @@ class _DetectionScreenState extends State<DetectionScreen> {
   }
 
   void _stopCamera() async {
-    //  Make sure TTS completes
-    await _tts.awaitSpeakCompletion(true);
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    final strings = AppLocalizations.of(context);
+    await settings.tts.stop();
+    await settings.tts.speak(strings.translate('detection_stopped'));
+    await Future.delayed(const Duration(seconds: 2));
+    if (mounted) Navigator.pop(context, true);
+  }
 
-
-    await _tts.speak("Detection stopped returning to home screen");
-
-    //  Wait a little so audio engine fully releases
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    // Go back to home page
-    Navigator.pop(context, true);
+  @override
+  void initState() {
+    super.initState();
+    _initializeCamera();
   }
 
   @override
   void dispose() {
     _controller?.dispose();
-    _tts.stop();
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    settings.tts.stop();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final settings = Provider.of<AppSettings>(context);
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaleFactor: settings.largeText ? 1.5 : 1.0),
+      child: _buildBody(settings),
+    );
+  }
+
+  Widget _buildBody(AppSettings settings) {
+    final strings = AppLocalizations.of(context);
+
     if (_controller == null || !_controller!.value.isInitialized) {
       return Scaffold(
         backgroundColor: const Color(0xFF0A0E21),
@@ -111,9 +112,9 @@ class _DetectionScreenState extends State<DetectionScreen> {
                 strokeWidth: 3,
               ),
               const SizedBox(height: 20),
-              const Text(
-                "Initializing Camera...",
-                style: TextStyle(
+              Text(
+                strings.translate('init_camera'),
+                style: const TextStyle(
                   color: Color(0xFFB3E5FC),
                   fontSize: 16,
                   fontWeight: FontWeight.w300,
@@ -129,7 +130,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
       backgroundColor: const Color(0xFF0A0E21),
       body: Column(
         children: [
-
           Container(
             padding: const EdgeInsets.only(top: 35, bottom: 10),
             decoration: const BoxDecoration(
@@ -148,7 +148,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
             ),
             child: Column(
               children: [
-
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 15),
                   child: Row(
@@ -172,10 +171,10 @@ class _DetectionScreenState extends State<DetectionScreen> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          "Live Object Detection",
-                          style: TextStyle(
+                          strings.translate('live_object_detection'),
+                          style: const TextStyle(
                             fontSize: 20,
                             color: Colors.white,
                             fontWeight: FontWeight.w700,
@@ -186,13 +185,11 @@ class _DetectionScreenState extends State<DetectionScreen> {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 10),
-
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Text(
-                    "Identifying objects in real-time",
+                    strings.translate('identifying_objects'),
                     style: TextStyle(
                       fontSize: 13,
                       color: Colors.white.withOpacity(0.7),
@@ -204,8 +201,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
               ],
             ),
           ),
-
-          // ===== VERY LARGE CAMERA PREVIEW =====
           Expanded(
             child: Container(
               margin: const EdgeInsets.fromLTRB(10, 10, 10, 5),
@@ -230,8 +225,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
               ),
             ),
           ),
-
-
           Container(
             padding: const EdgeInsets.only(top: 10, bottom: 25, left: 30, right: 30),
             decoration: const BoxDecoration(
@@ -243,7 +236,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
             ),
             child: Column(
               children: [
-
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   decoration: BoxDecoration(
@@ -270,7 +262,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        isPaused ? "PAUSED" : "DETECTING",
+                        isPaused ? strings.translate('paused') : strings.translate('detecting'),
                         style: TextStyle(
                           color: isPaused
                               ? const Color(0xFFFFB347)
@@ -283,19 +275,15 @@ class _DetectionScreenState extends State<DetectionScreen> {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 20),
-
-                // Control buttons
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    // Pause/Resume button
                     _buildEnhancedButton(
                       icon: isPaused
                           ? Icons.play_arrow_rounded
                           : Icons.pause_rounded,
-                      label: isPaused ? "RESUME" : "PAUSE",
+                      label: isPaused ? strings.translate('resume') : strings.translate('pause'),
                       onTap: _pauseResumeCamera,
                       gradient: const [
                         Color(0xFFFFB347),
@@ -304,11 +292,9 @@ class _DetectionScreenState extends State<DetectionScreen> {
                       iconSize: 34,
                       buttonSize: 70,
                     ),
-
-                    // Stop button
                     _buildEnhancedButton(
                       icon: Icons.stop_rounded,
-                      label: "STOP",
+                      label: strings.translate('stop'),
                       onTap: _stopCamera,
                       gradient: const [
                         Color(0xFFFF416C),
@@ -327,9 +313,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
     );
   }
 
-  // =========================
-  // ENHANCED BUTTON WIDGET
-  // =========================
   Widget _buildEnhancedButton({
     required IconData icon,
     required String label,
@@ -340,7 +323,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
   }) {
     return Column(
       children: [
-
         InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(buttonSize / 2),
@@ -378,10 +360,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
             ),
           ),
         ),
-
         const SizedBox(height: 8),
-
-        // Label
         Text(
           label,
           style: TextStyle(

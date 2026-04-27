@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../core/app_settings.dart';
+import '../core/app_localizations.dart';
 
 class HelpScreen extends StatefulWidget {
   final bool fromSettings;
@@ -12,242 +15,316 @@ class HelpScreen extends StatefulWidget {
 }
 
 class _HelpScreenState extends State<HelpScreen> {
-  final FlutterTts flutterTts = FlutterTts();
   final ScrollController _scrollController = ScrollController();
+  final Map<int, GlobalKey> _itemKeys = {};
+  late List<Map<String, String>> helpItems;
+  late List<String> _sectionsText;
+  final GlobalKey _voiceGuidanceKey = GlobalKey(); // Key for the last card
+
+  bool _isSpeaking = false;
+  bool _autoMode = true;
+  bool _dataInitialized = false;
 
   double ttsVolume = 0.5;
   String ttsLanguage = 'en-US';
   final double defaultTtsRate = 0.5;
 
-  final List<Map<String, String>> helpItems = [
-    {
-      'title': 'Navigation',
-      'content':
-      'Use the back button to go to previous screens and swipe gestures for quick navigation.',
-      'icon': 'navigation',
-    },
-    {
-      'title': 'Settings',
-      'content': 'Adjust language and volume from the settings screen.',
-      'icon': 'settings',
-    },
-    {
-      'title': 'About Page',
-      'content':
-      'Learn about the app, version, developer, and contact information.',
-      'icon': 'info',
-    },
-    {
-      'title': 'Object Detection',
-      'content':
-      'Detect objects in your surroundings using the camera. The app will describe what it sees.',
-      'icon': 'detection',
-    },
-    {
-      'title': 'Target Search',
-      'content':
-      'Search for a specific object by name, and the app will help you locate it.',
-      'icon': 'search',
-    },
-    {
-      'title': 'Voice Control',
-      'content':
-      'This app is voice-operated. You can give commands or tap buttons for guidance.',
-      'icon': 'voice',
-    },
-    {
-      'title': 'Help',
-      'content': 'You are currently on the Help screen for guidance.',
-      'icon': 'help',
-    },
-  ];
-
-  bool _isSpeaking = false;
-  bool _autoMode = true;
-  late List<String> _sectionsText;
-  final Map<int, GlobalKey> _itemKeys = {};
-  int _currentSectionIndex = 0;
+  Completer<void>? _ttsCompleter;
 
   @override
   void initState() {
     super.initState();
-    _sectionsText =
-        helpItems.map((e) => '${e['title']}: ${e['content']}').toList();
-
-    for (int i = 0; i < helpItems.length; i++) {
-      _itemKeys[i] = GlobalKey();
-    }
-
-    _initTts();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_dataInitialized) {
+      _initializeData();
+      _dataInitialized = true;
+      _initTts();
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Initialization & Data
+  // --------------------------------------------------------------------------
+  void _initializeData() {
+    final strings = AppLocalizations.of(context);
+    helpItems = [
+      {'title': strings.translate('navigation'), 'content': strings.translate('navigation_content'), 'icon': 'navigation'},
+      {'title': strings.translate('settings_help'), 'content': strings.translate('settings_help_content'), 'icon': 'settings'},
+      {'title': strings.translate('about_page'), 'content': strings.translate('about_page_content'), 'icon': 'info'},
+      {'title': strings.translate('object_detection_help'), 'content': strings.translate('object_detection_help_content'), 'icon': 'detection'},
+      {'title': strings.translate('target_search_help'), 'content': strings.translate('target_search_help_content'), 'icon': 'search'},
+      {'title': strings.translate('voice_control'), 'content': strings.translate('voice_control_content'), 'icon': 'voice'},
+      {'title': strings.translate('help_help'), 'content': strings.translate('help_help_content'), 'icon': 'help'},
+    ];
+
+    for (int i = 0; i < helpItems.length; i++) {
+      _itemKeys.putIfAbsent(i, () => GlobalKey());
+    }
+    // Sections text will be built after TTS language is known
+  }
+
+  void _buildSectionsText() {
+    final strings = AppLocalizations.of(context);
+    String welcomeMessage = ttsLanguage == 'ur-PK'
+        ? 'آپ ہیلپ اسکرین پر ہیں'
+        : 'You are on the help screen';
+
+    // Add voice guidance card text
+    String voiceGuidanceText = ttsLanguage == 'ur-PK'
+        ? 'وائس گائیڈنس: یہ ایپ خود بخود ہر سیکشن پڑھے گی۔ کسی بھی سیکشن کو دوبارہ سننے کے لیے اس پر تھپتھپائیں۔'
+        : 'Voice guidance: This app will automatically read each section. Tap any section to hear it again.';
+
+    _sectionsText = [welcomeMessage];
+    _sectionsText.addAll(helpItems.map((e) => '${e['title']}: ${e['content']}').toList());
+    _sectionsText.add(voiceGuidanceText); // Last box text
+  }
+
+  // --------------------------------------------------------------------------
+  // TTS Setup & Control
+  // --------------------------------------------------------------------------
   Future<void> _initTts() async {
     await _loadTtsSettings();
+    _buildSectionsText(); // Build sections after language is known
 
-    flutterTts.setCompletionHandler(() {
-      if (!_isSpeaking || !_autoMode) return;
-      _currentSectionIndex++;
-      if (_currentSectionIndex < _sectionsText.length) {
-        _scrollToItem(_currentSectionIndex);
-        flutterTts.speak(_sectionsText[_currentSectionIndex]);
-      }
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    settings.tts.setCompletionHandler(() {
+      _ttsCompleter?.complete();
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await _announceHelpPage();
-      _startReadingAll();
-    });
+    // Prevent voice‑cutting after screen open
+    if (ttsLanguage == 'ur-PK') {
+      await Future.delayed(const Duration(milliseconds: 1000));
+    } else {
+      await Future.delayed(const Duration(milliseconds: 800));
+    }
+
+    if (_sectionsText.isNotEmpty && mounted) {
+      _startReadingAll(isFirst: true);
+    }
   }
 
   Future<void> _loadTtsSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    ttsVolume = (prefs.getDouble('volume') ?? 100) / 100;
-    ttsLanguage = prefs.getString('language') ?? 'en-US';
-
-    await flutterTts.setLanguage(ttsLanguage);
-    await flutterTts.setSpeechRate(defaultTtsRate);
-    await flutterTts.setVolume(ttsVolume);
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    ttsVolume = settings.volume;
+    ttsLanguage = settings.language == 'Urdu' ? 'ur-PK' : 'en-US';
+    await settings.tts.setVolume(ttsVolume);
+    await settings.tts.setSpeechRate(defaultTtsRate);
+    await settings.tts.setLanguage(ttsLanguage);
   }
 
-  Future<void> _announceHelpPage() async {
-    _isSpeaking = true;
-    await flutterTts.stop();
-    await flutterTts.speak(
-        "You are on the Help screen. This app is voice operated. "
-            "Here is guidance for all its features.");
-    await Future.delayed(const Duration(milliseconds: 1500));
-  }
+  /// Scrolls to the item at [index] only if it is not already visible.
+  Future<void> _scrollToItemIfNeeded(int index) async {
+    GlobalKey? key;
+    if (index == 0) {
+      // Welcome message – scroll to first help card
+      key = _itemKeys[0];
+    } else if (index <= helpItems.length) {
+      // Help cards
+      final itemIndex = index - 1;
+      if (itemIndex >= 0 && itemIndex < helpItems.length) {
+        key = _itemKeys[itemIndex];
+      }
+    } else if (index == _sectionsText.length - 1) {
+      // Last section: voice guidance card
+      key = _voiceGuidanceKey;
+    }
 
-  void _scrollToItem(int index) {
-    final key = _itemKeys[index];
-    if (key?.currentContext != null) {
-      Scrollable.ensureVisible(
-        key!.currentContext!,
-        duration: const Duration(milliseconds: 400),
+    if (key?.currentContext == null) return;
+
+    final ScrollableState? scrollableState = Scrollable.maybeOf(key!.currentContext!);
+    if (scrollableState == null) return;
+
+    final RenderBox? renderBox = key.currentContext!.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final position = renderBox.localToGlobal(Offset.zero);
+    final itemTop = position.dy;
+    final itemBottom = itemTop + renderBox.size.height;
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    final visible = itemTop >= 0 && itemBottom <= screenHeight;
+    if (!visible) {
+      await Scrollable.ensureVisible(
+        key.currentContext!,
+        duration: Duration(milliseconds: 20),
         curve: Curves.easeInOut,
-        alignment: 0.5,
+        alignment: 0.3,
       );
     }
   }
 
-  Future<void> _startReadingAll({int startIndex = 0}) async {
-    _autoMode = true;
-    _isSpeaking = true;
-    _currentSectionIndex = startIndex;
+  int _estimateDurationMs(String text) {
+    const int msPerChar = 100;
+    int estimated = text.length * msPerChar;
+    if (ttsLanguage == 'ur-PK') {
+      return estimated.clamp(4000, 8000);
+    } else {
+      return estimated.clamp(450, 6500);
+    }
+  }
 
-    _scrollToItem(startIndex);
-    await flutterTts.stop();
-    await flutterTts.speak(_sectionsText[startIndex]);
+  Future<void> _speakAndWait(String text) async {
+    final settings = Provider.of<AppSettings>(context, listen: false);
+
+    _ttsCompleter = Completer<void>();
+    await settings.tts.speak(text);
+
+    final estimatedDur = _estimateDurationMs(text);
+    final fallbackDuration = Duration(milliseconds: estimatedDur );
+
+    try {
+      await _ttsCompleter!.future.timeout(fallbackDuration);
+    } on TimeoutException {
+      debugPrint('Fallback timer used for: "$text" (${text.length} chars)');
+    } finally {
+      _ttsCompleter = null;
+    }
+  }
+
+  Future<void> _startReadingAll({int startIndex = 0, bool isFirst = false}) async {
+    if (!isFirst) {
+      await _stopSpeaking();
+    }
+    _autoMode = true;
+    setState(() => _isSpeaking = true);
+
+    for (int i = startIndex; i < _sectionsText.length; i++) {
+      if (!_autoMode) break;
+      await _scrollToItemIfNeeded(i);
+      await _speakAndWait(_sectionsText[i]);
+    }
+
+    if (mounted && _autoMode) {
+      setState(() => _isSpeaking = false);
+    }
   }
 
   Future<void> _readItem(int index) async {
+    await _stopSpeaking();
     _autoMode = true;
-    _isSpeaking = true;
-    _currentSectionIndex = index;
+    setState(() => _isSpeaking = true);
 
-    _scrollToItem(index);
-    await flutterTts.stop();
-    await flutterTts.speak(_sectionsText[index]);
+    int sectionsIndex = index + 1; // skip welcome message
+    if (sectionsIndex < _sectionsText.length) {
+      await _scrollToItemIfNeeded(sectionsIndex);
+      await _speakAndWait(_sectionsText[sectionsIndex]);
+    }
+
+    if (mounted) {
+      setState(() => _isSpeaking = false);
+    }
   }
 
   Future<void> _stopSpeaking() async {
-    _isSpeaking = false;
     _autoMode = false;
-    await flutterTts.stop();
+    if (mounted) setState(() => _isSpeaking = false);
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    await settings.tts.stop();
+    _ttsCompleter = null;
   }
 
+  // --------------------------------------------------------------------------
+  // Lifecycle
+  // --------------------------------------------------------------------------
   @override
   void dispose() {
-    flutterTts.stop();
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    settings.tts.stop();
     _scrollController.dispose();
     super.dispose();
   }
 
+  // --------------------------------------------------------------------------
+  // UI BUILD
+  // --------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFD),
-      body: SafeArea(
-        child: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color(0xFFF8FAFD),
-                Color(0xFFE8F4FD),
-              ],
+    final settings = Provider.of<AppSettings>(context);
+    final strings = AppLocalizations.of(context);
+
+    final bgColor = settings.highContrast ? Colors.black : const Color(0xFFF8FAFD);
+    final textColor = settings.highContrast ? Colors.white : const Color(0xFF1A237E);
+    final cardBgColor = settings.highContrast ? const Color(0xFF1E1E1E) : Colors.white;
+    final subtitleColor = settings.highContrast ? Colors.white70 : const Color(0xFF5C6BC0);
+    final headerBgColor = settings.highContrast ? const Color(0xFF1E1E1E) : Colors.white;
+
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaleFactor: settings.largeText ? 1.5 : 1.0),
+      child: Scaffold(
+        backgroundColor: bgColor,
+        body: SafeArea(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: settings.highContrast
+                  ? null
+                  : const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFFF8FAFD), Color(0xFFE8F4FD)],
+              ),
+              color: settings.highContrast ? Colors.black : null,
             ),
-          ),
-          child: Column(
-            children: [
-              // ===== HEADER =====
-              Container(
-                padding: const EdgeInsets.only(top: 20, left: 20, right: 20, bottom: 20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(30),
-                    bottomRight: Radius.circular(30),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 20,
-                      spreadRadius: 5,
+            child: Column(
+              children: [
+                // ---------------------- HEADER (unchanged) ----------------------
+                Container(
+                  padding: const EdgeInsets.only(top: 20, left: 20, right: 20, bottom: 20),
+                  decoration: BoxDecoration(
+                    color: headerBgColor,
+                    borderRadius: const BorderRadius.only(
+                      bottomLeft: Radius.circular(30),
+                      bottomRight: Radius.circular(30),
                     ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    // Top Bar
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Container(
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1A237E),
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 8,
-                                spreadRadius: 1,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 20,
+                        spreadRadius: 5,
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Flexible(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1A237E),
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 8,
+                                    spreadRadius: 1,
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          child: IconButton(
-                            icon: const Icon(
-                              Icons.arrow_back_ios_new_rounded,
-                              color: Colors.white,
-                              size: 20,
+                              child: IconButton(
+                                icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                                    color: Colors.white, size: 20),
+                                onPressed: () async {
+                                  await _stopSpeaking();
+                                  final settingsLocal =
+                                  Provider.of<AppSettings>(context, listen: false);
+                                  final message = widget.fromSettings
+                                      ? strings.translate('returning_to_settings')
+                                      : strings.translate('returning_home_screen');
+                                  await settingsLocal.tts.speak(message);
+                                  await Future.delayed(const Duration(seconds: 2));
+                                  if (mounted) Navigator.pop(context);
+                                },
+                              ),
                             ),
-                            onPressed: () async {
-                              _autoMode = false;
-                              _isSpeaking = true;
-
-                              await flutterTts.stop();
-
-                              flutterTts.setCompletionHandler(() {
-                                if (mounted) {
-                                  Navigator.pop(context);
-                                }
-                              });
-
-                              if (widget.fromSettings) {
-                                await flutterTts.speak(
-                                    "Returning to Settings screen.");
-                              } else {
-                                await flutterTts.speak("Returning to Home screen.");
-                              }
-                            },
                           ),
-                        ),
-
-                        // Control Buttons
-                        Row(
-                          children: [
-                            Container(
+                          Flexible(
+                            child: Container(
                               decoration: BoxDecoration(
                                 color: const Color(0xFF1A237E),
                                 borderRadius: BorderRadius.circular(12),
@@ -268,168 +345,167 @@ class _HelpScreenState extends State<HelpScreen> {
                                   size: 22,
                                 ),
                                 onPressed: () {
-                                  if (_isSpeaking) {
+                                  if (_isSpeaking)
                                     _stopSpeaking();
-                                  } else {
-                                    _startReadingAll();
-                                  }
+                                  else
+                                    _startReadingAll(isFirst: false);
                                 },
                               ),
                             ),
-                          ],
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 25),
-
-                    // Title
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1A237E).withOpacity(0.1),
-                            shape: BoxShape.circle,
                           ),
-                          child: const Icon(
-                            Icons.help_outline_rounded,
-                            color: Color(0xFF1A237E),
-                            size: 28,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        const Text(
-                          "HELP GUIDE",
-                          style: TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF1A237E),
-                            letterSpacing: 1.5,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 10),
-
-                    // Subtitle
-                    Text(
-                      "Tap any section to hear guidance",
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: const Color(0xFF5C6BC0),
-                        fontWeight: FontWeight.w400,
-                        fontStyle: FontStyle.italic,
+                        ],
                       ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // ===== HELP ITEMS =====
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: ListView(
-                    controller: _scrollController,
-                    children: [
-                      ...helpItems.asMap().entries.map((entry) {
-                        final index = entry.key;
-                        final item = entry.value;
-
-                        return Padding(
-                          key: _itemKeys[index],
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: _buildHelpCard(
-                            title: item['title']!,
-                            content: item['content']!,
-                            icon: _getIcon(item['icon']!),
-                            iconColor: _getIconColor(index),
-                            gradient: _getCardGradient(index),
-                            onTap: () => _readItem(index),
-                          ),
-                        );
-                      }).toList(),
-
-                      const SizedBox(height: 30),
-
-                      // Voice Guidance Note
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [
-                              Color(0xFF1A237E),
-                              Color(0xFF3949AB),
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF1A237E).withOpacity(0.3),
-                              blurRadius: 15,
-                              spreadRadius: 2,
-                              offset: const Offset(0, 4),
+                      const SizedBox(height: 25),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1A237E).withOpacity(0.1),
+                              shape: BoxShape.circle,
                             ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.volume_up_rounded,
-                              color: Colors.white,
-                              size: 28,
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    "Voice Guidance",
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    "This app will automatically read each section. Tap any section to hear it again.",
-                                    style: TextStyle(
-                                      color: Colors.white.withOpacity(0.9),
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w400,
-                                    ),
-                                  ),
-                                ],
+                            child: Icon(Icons.help_outline_rounded,
+                                color: textColor, size: 28),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Text(
+                              strings.translate('help_title'),
+                              style: TextStyle(
+                                fontSize: 32,
+                                fontWeight: FontWeight.w800,
+                                color: textColor,
+                                letterSpacing: 1.5,
                               ),
+                              softWrap: true,
                             ),
-                          ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Text(
+                          strings.translate('help_subtitle'),
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: subtitleColor,
+                            fontWeight: FontWeight.w400,
+                            fontStyle: FontStyle.italic,
+                          ),
+                          textAlign: TextAlign.center,
+                          softWrap: true,
                         ),
                       ),
-
-                      const SizedBox(height: 40),
                     ],
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 20),
+
+                // ---------------------- LIST OF HELP CARDS + VOICE CARD ----------------------
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: ListView(
+                      controller: _scrollController,
+                      children: [
+                        ...helpItems.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final item = entry.value;
+                          return Padding(
+                            key: _itemKeys[index],
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: _buildHelpCard(
+                              title: item['title']!,
+                              content: item['content']!,
+                              icon: _getIcon(item['icon']!),
+                              iconColor: _getIconColor(index),
+                              gradient: _getCardGradient(index),
+                              onTap: () => _readItem(index),
+                            ),
+                          );
+                        }).toList(),
+                        const SizedBox(height: 30),
+
+                        // Voice guidance note card – with key and onTap
+                        GestureDetector(
+                          key: _voiceGuidanceKey,
+                          onTap: () {
+                            // When tapped, speak only this card's text
+                            _readItem(helpItems.length); // special index for last box
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF1A237E), Color(0xFF3949AB)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF1A237E).withOpacity(0.3),
+                                  blurRadius: 15,
+                                  spreadRadius: 2,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.volume_up_rounded,
+                                    color: Colors.white, size: 28),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        strings.translate('voice_guidance_card'),
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w700),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        strings.translate(
+                                            'voice_guidance_card_text'),
+                                        style: TextStyle(
+                                            color: Colors.white.withOpacity(0.9),
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w400),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 40),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  // =========================
-  // HELP CARD WIDGET
-  // =========================
+  // Override _readItem to also handle the voice guidance card index
+  // Already defined above – it uses sectionsIndex = index+1.
+  // For the voice card, we call with index = helpItems.length (7) which
+  // will map to sectionsIndex = 8 (the last element in _sectionsText).
+
+  // --------------------------------------------------------------------------
+  // UI Helpers (unchanged)
+  // --------------------------------------------------------------------------
   Widget _buildHelpCard({
     required String title,
     required String content,
@@ -443,10 +519,7 @@ class _HelpScreenState extends State<HelpScreen> {
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: gradient,
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+              colors: gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
@@ -459,26 +532,17 @@ class _HelpScreenState extends State<HelpScreen> {
         ),
         child: Stack(
           children: [
-            // Background pattern
             Positioned(
               right: 16,
               top: 16,
               child: Opacity(
-                opacity: 0.1,
-                child: Icon(
-                  icon,
-                  size: 60,
-                  color: Colors.white,
-                ),
-              ),
+                  opacity: 0.1, child: Icon(icon, size: 60, color: Colors.white)),
             ),
-
             Padding(
               padding: const EdgeInsets.all(20),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Icon Container
                   Container(
                     width: 50,
                     height: 50,
@@ -486,22 +550,12 @@ class _HelpScreenState extends State<HelpScreen> {
                       color: Colors.white.withOpacity(0.2),
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: Colors.white.withOpacity(0.3),
-                        width: 1.5,
-                      ),
+                          color: Colors.white.withOpacity(0.3), width: 1.5),
                     ),
-                    child: Center(
-                      child: Icon(
-                        icon,
-                        color: Colors.white,
-                        size: 24,
-                      ),
-                    ),
+                    child:
+                    Center(child: Icon(icon, color: Colors.white, size: 24)),
                   ),
-
                   const SizedBox(width: 16),
-
-                  // Content
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -537,9 +591,6 @@ class _HelpScreenState extends State<HelpScreen> {
     );
   }
 
-  // =========================
-  // ICON HELPER FUNCTIONS
-  // =========================
   IconData _getIcon(String iconName) {
     switch (iconName) {
       case 'navigation':
@@ -563,26 +614,26 @@ class _HelpScreenState extends State<HelpScreen> {
 
   Color _getIconColor(int index) {
     final colors = [
-      const Color(0xFF4CAF50), // Green
-      const Color(0xFF2196F3), // Blue
-      const Color(0xFF9C27B0), // Purple
-      const Color(0xFFFF9800), // Orange
-      const Color(0xFF00BCD4), // Cyan
-      const Color(0xFFE91E63), // Pink
-      const Color(0xFF3F51B5), // Indigo
+      const Color(0xFF4CAF50),
+      const Color(0xFF2196F3),
+      const Color(0xFF9C27B0),
+      const Color(0xFFFF9800),
+      const Color(0xFF00BCD4),
+      const Color(0xFFE91E63),
+      const Color(0xFF3F51B5),
     ];
     return colors[index % colors.length];
   }
 
   List<Color> _getCardGradient(int index) {
     final gradients = [
-      [const Color(0xFF66BB6A), const Color(0xFF43A047)], // Green
-      [const Color(0xFF42A5F5), const Color(0xFF1976D2)], // Blue
-      [const Color(0xFFAB47BC), const Color(0xFF7B1FA2)], // Purple
-      [const Color(0xFFFFB74D), const Color(0xFFF57C00)], // Orange
-      [const Color(0xFF26C6DA), const Color(0xFF0097A7)], // Cyan
-      [const Color(0xFFF06292), const Color(0xFFC2185B)], // Pink
-      [const Color(0xFF5C6BC0), const Color(0xFF3949AB)], // Indigo
+      [const Color(0xFF66BB6A), const Color(0xFF43A047)],
+      [const Color(0xFF42A5F5), const Color(0xFF1976D2)],
+      [const Color(0xFFAB47BC), const Color(0xFF7B1FA2)],
+      [const Color(0xFFFFB74D), const Color(0xFFF57C00)],
+      [const Color(0xFF26C6DA), const Color(0xFF0097A7)],
+      [const Color(0xFFF06292), const Color(0xFFC2185B)],
+      [const Color(0xFF5C6BC0), const Color(0xFF3949AB)],
     ];
     return gradients[index % gradients.length];
   }

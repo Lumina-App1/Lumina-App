@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'home_screen.dart';
+import '../core/app_settings.dart';
+import '../core/app_localizations.dart';
 
 late List<CameraDescription> cameras;
 
@@ -15,31 +18,14 @@ class TargetScreen extends StatefulWidget {
 class _TargetScreenState extends State<TargetScreen> {
   CameraController? _controller;
   bool isPaused = false;
-  final FlutterTts _tts = FlutterTts();
   bool _hasSpoken = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _setupTts();
-    _initializeCamera();
+  Future<void> _speak(String text) async {
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    await settings.tts.stop();
+    settings.tts.speak(text);
   }
 
-  Future<void> _setupTts() async {
-    await _tts.setLanguage("en-US");
-    await _tts.setSpeechRate(0.45);
-    await _tts.setVolume(1.0);
-    await _tts.setPitch(1.0);
-  }
-
-  void _speak(String text) {
-    _tts.stop();
-    _tts.speak(text);  // non-blocking
-  }
-
-  // =========================
-  // CAMERA INIT
-  // =========================
   Future<void> _initializeCamera() async {
     cameras = await availableCameras();
 
@@ -56,15 +42,14 @@ class _TargetScreenState extends State<TargetScreen> {
 
     if (!_hasSpoken) {
       _hasSpoken = true;
-      _speak("Please tell which specific object you want to detect.");
+      final strings = AppLocalizations.of(context);
+      await _speak(strings.translate('target_start'));
     }
   }
 
-  // =========================
-  // PAUSE / RESUME
-  // =========================
-  void _pauseResumeCamera() {
+  void _pauseResumeCamera() async {
     if (_controller == null) return;
+    final strings = AppLocalizations.of(context);
 
     setState(() {
       isPaused = !isPaused;
@@ -72,44 +57,48 @@ class _TargetScreenState extends State<TargetScreen> {
 
     if (isPaused) {
       _controller!.pausePreview();
-      _speak("Detection paused");
+      await _speak(strings.translate('detection_paused'));
     } else {
       _controller!.resumePreview();
-      _speak("Detection resumed");
+      await _speak(strings.translate('detection_resumed'));
     }
   }
 
-  // =========================
-  // STOP (SPEAK + NAVIGATE)
-  // =========================
-
-
   void _stopCamera() async {
-    // Make sure TTS completes
-    await _tts.awaitSpeakCompletion(true);
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    final strings = AppLocalizations.of(context);
+    await settings.tts.stop();
+    await settings.tts.speak(strings.translate('target_stopped'));
+    await Future.delayed(const Duration(seconds: 2));
+    if (mounted) Navigator.pop(context, true);
+  }
 
-
-    await _tts.speak("Detection stopped returning to home screen");
-
-    //  Wait a little so audio engine fully releases
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    //  Go back to home
-    Navigator.pop(context, true);
+  @override
+  void initState() {
+    super.initState();
+    _initializeCamera();
   }
 
   @override
   void dispose() {
     _controller?.dispose();
-    _tts.stop();
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    settings.tts.stop();
     super.dispose();
   }
 
-  // =========================
-  // UI
-  // =========================
   @override
   Widget build(BuildContext context) {
+    final settings = Provider.of<AppSettings>(context);
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaleFactor: settings.largeText ? 1.5 : 1.0),
+      child: _buildBody(settings),
+    );
+  }
+
+  Widget _buildBody(AppSettings settings) {
+    final strings = AppLocalizations.of(context);
+
     if (_controller == null || !_controller!.value.isInitialized) {
       return Scaffold(
         backgroundColor: const Color(0xFF0A0E21),
@@ -124,9 +113,9 @@ class _TargetScreenState extends State<TargetScreen> {
                 strokeWidth: 3,
               ),
               const SizedBox(height: 20),
-              const Text(
-                "Initializing Camera...",
-                style: TextStyle(
+              Text(
+                strings.translate('init_camera'),
+                style: const TextStyle(
                   color: Color(0xFFB3E5FC),
                   fontSize: 16,
                   fontWeight: FontWeight.w300,
@@ -142,7 +131,6 @@ class _TargetScreenState extends State<TargetScreen> {
       backgroundColor: const Color(0xFF0A0E21),
       body: Column(
         children: [
-
           Container(
             padding: const EdgeInsets.only(top: 35, bottom: 10),
             decoration: const BoxDecoration(
@@ -161,7 +149,6 @@ class _TargetScreenState extends State<TargetScreen> {
             ),
             child: Column(
               children: [
-
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 15),
                   child: Row(
@@ -185,10 +172,10 @@ class _TargetScreenState extends State<TargetScreen> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          "Target Object Search",
-                          style: TextStyle(
+                          strings.translate('target_search_title'),
+                          style: const TextStyle(
                             fontSize: 20,
                             color: Colors.white,
                             fontWeight: FontWeight.w700,
@@ -199,14 +186,11 @@ class _TargetScreenState extends State<TargetScreen> {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 10),
-
-
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Text(
-                    "Speak object name to search",
+                    strings.translate('target_subtitle'),
                     style: TextStyle(
                       fontSize: 13,
                       color: Colors.white.withOpacity(0.7),
@@ -218,8 +202,6 @@ class _TargetScreenState extends State<TargetScreen> {
               ],
             ),
           ),
-
-          // ===== VERY LARGE CAMERA PREVIEW =====
           Expanded(
             child: Container(
               margin: const EdgeInsets.fromLTRB(10, 10, 10, 5),
@@ -244,8 +226,6 @@ class _TargetScreenState extends State<TargetScreen> {
               ),
             ),
           ),
-
-
           Container(
             padding: const EdgeInsets.only(top: 10, bottom: 25, left: 30, right: 30),
             decoration: const BoxDecoration(
@@ -257,7 +237,6 @@ class _TargetScreenState extends State<TargetScreen> {
             ),
             child: Column(
               children: [
-
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   decoration: BoxDecoration(
@@ -284,7 +263,7 @@ class _TargetScreenState extends State<TargetScreen> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        isPaused ? "PAUSED" : "ACTIVE",
+                        isPaused ? strings.translate('paused') : strings.translate('active'),
                         style: TextStyle(
                           color: isPaused
                               ? const Color(0xFFFFB347)
@@ -297,19 +276,15 @@ class _TargetScreenState extends State<TargetScreen> {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 20),
-
-                // Control buttons
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    // Pause/Resume button
                     _buildEnhancedButton(
                       icon: isPaused
                           ? Icons.play_arrow_rounded
                           : Icons.pause_rounded,
-                      label: isPaused ? "RESUME" : "PAUSE",
+                      label: isPaused ? strings.translate('resume') : strings.translate('pause'),
                       onTap: _pauseResumeCamera,
                       gradient: const [
                         Color(0xFFFFB347),
@@ -318,11 +293,9 @@ class _TargetScreenState extends State<TargetScreen> {
                       iconSize: 34,
                       buttonSize: 70,
                     ),
-
-                    // Stop button
                     _buildEnhancedButton(
                       icon: Icons.stop_rounded,
-                      label: "STOP",
+                      label: strings.translate('stop'),
                       onTap: _stopCamera,
                       gradient: const [
                         Color(0xFFFF416C),
@@ -341,9 +314,6 @@ class _TargetScreenState extends State<TargetScreen> {
     );
   }
 
-  // =========================
-  // ENHANCED BUTTON WIDGET
-  // =========================
   Widget _buildEnhancedButton({
     required IconData icon,
     required String label,
@@ -354,7 +324,6 @@ class _TargetScreenState extends State<TargetScreen> {
   }) {
     return Column(
       children: [
-        // Button with shadow and gradient
         InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(buttonSize / 2),
@@ -392,10 +361,7 @@ class _TargetScreenState extends State<TargetScreen> {
             ),
           ),
         ),
-
         const SizedBox(height: 8),
-
-        // Label
         Text(
           label,
           style: TextStyle(

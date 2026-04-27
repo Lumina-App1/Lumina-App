@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:provider/provider.dart';
 import 'home_screen.dart';
+import '../core/app_settings.dart';
+import '../core/app_localizations.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -12,34 +15,63 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen> {
   final FlutterTts _flutterTts = FlutterTts();
+  bool _navigated = false;
 
   @override
   void initState() {
     super.initState();
+    _speakWelcomeAndNavigate();
+  }
 
-    // Speak welcome message as soon as splash screen shows
-    _speakWelcome();
+  Future<void> _speakWelcomeAndNavigate() async {
+    // Get saved language and localized welcome message
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    final strings = AppLocalizations.of(context);
+    final String welcomeMessage = strings.translate('welcome_splash');
+    final String ttsLang = settings.language == 'Urdu' ? 'ur-PK' : 'en-US';
 
+    // Set up completion handler
+    _flutterTts.setCompletionHandler(() {
+      if (!_navigated) {
+        _navigated = true;
+        _goToHome();
+      }
+    });
 
-    Timer(const Duration(seconds:5), () {
+    // Fallback timer (in case completion handler never fires)
+    Timer(const Duration(seconds: 8), () {
+      if (!_navigated) {
+        _navigated = true;
+        _goToHome();
+      }
+    });
+
+    // Speak the message in the correct language
+    await _flutterTts.setLanguage(ttsLang);
+    await _flutterTts.setPitch(1.2);
+    await _flutterTts.setSpeechRate(0.5);
+    await _flutterTts.setVolume(settings.volume);
+    await _flutterTts.speak(welcomeMessage);
+  }
+
+  void _goToHome() {
+    if (mounted) {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
-    });
+    }
   }
 
-  Future<void> _speakWelcome() async {
-    await _flutterTts.setLanguage("en-US");
-    await _flutterTts.setPitch(1.2);
-    await _flutterTts.setSpeechRate(0.5);
-
-    await _flutterTts.speak(
-        "Welcome to Lumina App. Seeing Beyond Vision");
+  @override
+  void dispose() {
+    _flutterTts.stop();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    // Your existing build method remains exactly the same
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E21),
       body: Container(
@@ -57,7 +89,6 @@ class _SplashScreenState extends State<SplashScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-
               Container(
                 width: 160,
                 height: 160,
@@ -81,18 +112,15 @@ class _SplashScreenState extends State<SplashScreen> {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(80),
                     child: Image.asset(
-                      'assets/lumina.png',
+                      'assets/new_logo1.jpg',
                       width: 140,
                       height: 140,
-                      fit: BoxFit.contain,
+                      fit: BoxFit.cover,
                     ),
                   ),
                 ),
               ),
-
               const SizedBox(height: 40),
-
-
               ShaderMask(
                 shaderCallback: (bounds) {
                   return const LinearGradient(
@@ -114,10 +142,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 12),
-
-
               const Text(
                 "Seeing Beyond Vision",
                 style: TextStyle(
@@ -127,10 +152,7 @@ class _SplashScreenState extends State<SplashScreen> {
                   letterSpacing: 1.5,
                 ),
               ),
-
               const SizedBox(height: 60),
-
-
               SizedBox(
                 width: 120,
                 child: LinearProgressIndicator(
@@ -142,14 +164,11 @@ class _SplashScreenState extends State<SplashScreen> {
                   minHeight: 4,
                 ),
               ),
-
               const SizedBox(height: 20),
-
-
-              AnimatedOpacity(
+              const AnimatedOpacity(
                 opacity: 1.0,
-                duration: const Duration(milliseconds: 500),
-                child: const Text(
+                duration: Duration(milliseconds: 500),
+                child: Text(
                   "Initializing accessibility features...",
                   style: TextStyle(
                     fontSize: 14,

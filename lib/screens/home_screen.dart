@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../main.dart';
+import '../core/app_settings.dart';
+import '../core/app_localizations.dart';
 import '../widgets/permission_dialog.dart';
-import '../widgets/home_button.dart';
-
 import 'detection_screen.dart';
 import 'target_screen.dart';
 import 'settings_screen.dart';
@@ -19,16 +20,11 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with RouteAware {
-  final FlutterTts flutterTts = FlutterTts();
   static bool _permissionDialogShown = false;
 
-  // =========================
-  // INIT
-  // =========================
   @override
   void initState() {
     super.initState();
-
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!await _permissionsGranted()) {
         if (!_permissionDialogShown) {
@@ -41,21 +37,26 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     });
   }
 
-  // =========================
-  // ROUTE AWARE
-  // =========================
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     routeObserver.subscribe(this, ModalRoute.of(context)! as PageRoute);
   }
 
-
   @override
   void didPopNext() {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final settings = Provider.of<AppSettings>(context, listen: false);
+      final bool isUrdu = settings.language == 'Urdu';
 
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Urdu return message is longer – wait 2 seconds
+      // English return message is short – wait 0.8 seconds
+      final int delayMs = isUrdu ? 2000 : 800;
+      await Future.delayed(Duration(milliseconds: delayMs));
+
+      // Ensure any lingering speech is stopped before starting home welcome
+      await settings.tts.stop();
+      await Future.delayed(const Duration(milliseconds: 200));
 
       speakWelcome();
     });
@@ -64,302 +65,189 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
-    flutterTts.stop();
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    settings.tts.stop();
     super.dispose();
   }
 
-  // =========================
-  // PERMISSIONS
-  // =========================
   Future<bool> _permissionsGranted() async {
     final cam = await Permission.camera.status;
     final mic = await Permission.microphone.status;
     return cam.isGranted && mic.isGranted;
   }
 
-  // =========================
-  // TTS
-  // =========================
   Future<void> speakWelcome() async {
-    await flutterTts.stop();
-    await flutterTts.setLanguage("en-US");
-    await flutterTts.setSpeechRate(0.45);
-    await flutterTts.setVolume(1.0);
-
-    await flutterTts.speak(
-      "Welcome to home. How can I help you? "
-          "For object detection, select object detection. "
-          "To search something specific, select target search. "
-          "To change settings, select settings.",
-    );
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    final strings = AppLocalizations.of(context);
+    await settings.tts.stop();
+    await settings.tts.setLanguage(settings.language == 'Urdu' ? 'ur-PK' : 'en-US');
+    await settings.tts.setSpeechRate(0.45);
+    await settings.tts.setVolume(settings.volume);
+    await settings.tts.speak(strings.translate('welcome_home'));
   }
 
-  // =========================
-  // PERMISSION DIALOG
-  // =========================
   void showPermissionDialog() {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) {
-        return PermissionDialog(
-          onAllowed: () {
-            speakWelcome();
-          },
-        );
-      },
+      builder: (_) => PermissionDialog(onAllowed: speakWelcome),
     );
   }
 
-  // =========================
-  // UI
-  // =========================
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFD),
-      body: SafeArea(
-        child: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color(0xFFF8FAFD),
-                Color(0xFFE8F4FD),
-              ],
+    final settings = Provider.of<AppSettings>(context);
+    final strings = AppLocalizations.of(context);
+
+    final bgColor = settings.highContrast ? Colors.black : const Color(0xFFF8FAFD);
+    final textColor = settings.highContrast ? Colors.white : const Color(0xFF1A237E);
+    final cardBgColor = settings.highContrast ? const Color(0xFF1E1E1E) : Colors.white;
+    final subtitleColor = settings.highContrast ? Colors.white70 : const Color(0xFF5C6BC0);
+    final infoBoxColor = settings.highContrast ? const Color(0xFF2C2C2C) : const Color(0xFFE3F2FD);
+    final infoBoxBorder = settings.highContrast ? Colors.grey[700] : const Color(0xFFBBDEFB);
+
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaleFactor: settings.largeText ? 1.5 : 1.0),
+      child: Scaffold(
+        backgroundColor: bgColor,
+        body: SafeArea(
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: settings.highContrast
+                  ? null
+                  : const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFFF8FAFD), Color(0xFFE8F4FD)],
+              ),
+              color: settings.highContrast ? Colors.black : null,
             ),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 24),
-            child: Column(
-              children: [
-                // TOP BAR WITH APP NAME
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Back button with visual enhancement
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 8,
-                            spreadRadius: 1,
-                          ),
-                        ],
-                      ),
-                      child: IconButton(
-                        icon: const Icon(
-                          Icons.arrow_back_ios_new_rounded,
-                          color: Color(0xFF1A237E),
-                          size: 22,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 24),
+              child: Column(
+                children: [
+                  // Top bar
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          color: cardBgColor,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, spreadRadius: 1)],
                         ),
-                        onPressed: () {
-                          flutterTts.stop();
-                          Navigator.pop(context);
-                        },
-                      ),
-                    ),
-
-                    // App Name in middle
-                    const Text(
-                      "LUMINA",
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF1A237E),
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-
-                    // Help button with visual enhancement
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 8,
-                            spreadRadius: 1,
-                          ),
-                        ],
-                      ),
-                      child: IconButton(
-                        icon: const Icon(
-                          Icons.help_outline_rounded,
-                          color: Color(0xFF1A237E),
-                          size: 24,
+                        child: IconButton(
+                          icon: Icon(Icons.arrow_back_ios_new_rounded, color: textColor, size: 22),
+                          onPressed: () {
+                            settings.tts.stop();
+                            Navigator.pop(context);
+                          },
                         ),
-                        onPressed: () {
-                          flutterTts.stop();
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const HelpScreen(fromSettings: false),
-                            ),
-                          );
-                        },
                       ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 60),
-
-                // WELCOME TITLE WITH ICON
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.home_rounded,
-                      color: Color(0xFF1A237E),
-                      size: 32,
-                    ),
-                    const SizedBox(width: 12),
-                    const Text(
-                      "HOME",
-                      style: TextStyle(
-                        fontSize: 36,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF1A237E),
-                        letterSpacing: 2,
+                      Text(
+                        "LUMINA",
+                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: textColor, letterSpacing: 1.5),
                       ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 8),
-
-
-                const Text(
-                  "How can I help you today?",
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Color(0xFF5C6BC0),
-                    fontWeight: FontWeight.w400,
+                      Container(
+                        decoration: BoxDecoration(
+                          color: cardBgColor,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, spreadRadius: 1)],
+                        ),
+                        child: IconButton(
+                          icon: Icon(Icons.help_outline_rounded, color: textColor, size: 24),
+                          onPressed: () {
+                            settings.tts.stop();
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => const HelpScreen(fromSettings: false)));
+                          },
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-
-                const SizedBox(height: 60),
-
-
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-
-                        _buildFeatureCard(
-                          title: "Object Detection",
-                          subtitle: "Identify objects around you",
-                          icon: Icons.remove_red_eye_rounded,
-                          iconColor: Colors.white,
-                          iconBgColor: const Color(0xFF4CAF50),
-                          gradientColors: const [
-                            Color(0xFF66BB6A),
-                            Color(0xFF43A047),
-                          ],
-                          onTap: () {
-                            flutterTts.stop();
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const DetectionScreen(),
-                              ),
-                            );
-                          },
-                        ),
-
-                        const SizedBox(height: 24),
-
-
-                        _buildFeatureCard(
-                          title: "Target Search",
-                          subtitle: "Find specific items",
-                          icon: Icons.search_rounded,
-                          iconColor: Colors.white,
-                          iconBgColor: const Color(0xFF2196F3),
-                          gradientColors: const [
-                            Color(0xFF42A5F5),
-                            Color(0xFF1976D2),
-                          ],
-                          onTap: () {
-                            flutterTts.stop();
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const TargetScreen(),
-                              ),
-                            );
-                          },
-                        ),
-
-                        const SizedBox(height: 24),
-
-
-                        _buildFeatureCard(
-                          title: "Settings",
-                          subtitle: "Customize your experience",
-                          icon: Icons.settings_rounded,
-                          iconColor: Colors.white,
-                          iconBgColor: const Color(0xFF9C27B0),
-                          gradientColors: const [
-                            Color(0xFFAB47BC),
-                            Color(0xFF7B1FA2),
-                          ],
-                          onTap: () {
-                            flutterTts.stop();
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const SettingsScreen(),
-                              ),
-                            );
-                          },
-                        ),
-
-                        const SizedBox(height: 40),
-
-
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE3F2FD),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: const Color(0xFFBBDEFB),
-                              width: 1,
-                            ),
+                  const SizedBox(height: 60),
+                  // Welcome title
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.home_rounded, color: textColor, size: 32),
+                      const SizedBox(width: 12),
+                      Text(strings.translate('home_title'), style: TextStyle(fontSize: 36, fontWeight: FontWeight.w800, color: textColor, letterSpacing: 2)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(strings.translate('home_subtitle'), style: TextStyle(fontSize: 16, color: subtitleColor, fontWeight: FontWeight.w400)),
+                  const SizedBox(height: 60),
+                  // Scrollable content
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          _buildFeatureCard(
+                            title: strings.translate('object_detection'),
+                            subtitle: strings.translate('object_detection_sub'),
+                            icon: Icons.remove_red_eye_rounded,
+                            iconColor: Colors.white,
+                            iconBgColor: const Color(0xFF4CAF50),
+                            gradientColors: const [Color(0xFF66BB6A), Color(0xFF43A047)],
+                            onTap: () {
+                              settings.tts.stop();
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => const DetectionScreen()));
+                            },
                           ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.volume_up_rounded,
-                                color: const Color(0xFF1A237E),
-                                size: 24,
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  "Voice guidance is active. Tap any option for audio feedback.",
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: const Color(0xFF1A237E).withOpacity(0.8),
-                                    fontWeight: FontWeight.w500,
+                          const SizedBox(height: 24),
+                          _buildFeatureCard(
+                            title: strings.translate('target_search'),
+                            subtitle: strings.translate('target_search_sub'),
+                            icon: Icons.search_rounded,
+                            iconColor: Colors.white,
+                            iconBgColor: const Color(0xFF2196F3),
+                            gradientColors: const [Color(0xFF42A5F5), Color(0xFF1976D2)],
+                            onTap: () {
+                              settings.tts.stop();
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => const TargetScreen()));
+                            },
+                          ),
+                          const SizedBox(height: 24),
+                          _buildFeatureCard(
+                            title: strings.translate('settings'),
+                            subtitle: strings.translate('settings_sub'),
+                            icon: Icons.settings_rounded,
+                            iconColor: Colors.white,
+                            iconBgColor: const Color(0xFF9C27B0),
+                            gradientColors: const [Color(0xFFAB47BC), Color(0xFF7B1FA2)],
+                            onTap: () {
+                              settings.tts.stop();
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
+                            },
+                          ),
+                          const SizedBox(height: 40),
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: infoBoxColor,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: infoBoxBorder!, width: 1),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.volume_up_rounded, color: textColor, size: 24),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    strings.translate('voice_guidance_active'),
+                                    style: TextStyle(fontSize: 14, color: textColor.withOpacity(0.8), fontWeight: FontWeight.w500),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 20),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -367,9 +255,6 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     );
   }
 
-  // =========================
-  // REUSABLE FEATURE CARD WIDGET
-  // =========================
   Widget _buildFeatureCard({
     required String title,
     required String subtitle,
@@ -382,7 +267,6 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 120,
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.centerLeft,
@@ -401,97 +285,84 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
         ),
         child: Stack(
           children: [
-            // Background pattern
             Positioned(
               right: 16,
               top: 16,
               child: Opacity(
                 opacity: 0.1,
-                child: Icon(
-                  icon,
-                  size: 80,
-                  color: Colors.white,
-                ),
+                child: Icon(icon, size: 80, color: Colors.white),
               ),
             ),
-
-            Row(
-              children: [
-                // Icon Container
-                Container(
-                  width: 70,
-                  height: 70,
-                  margin: const EdgeInsets.only(left: 20),
-                  decoration: BoxDecoration(
-                    color: iconBgColor,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 8,
-                        spreadRadius: 1,
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Icon(
-                      icon,
-                      size: 32,
-                      color: iconColor,
-                    ),
-                  ),
-                ),
-
-                const SizedBox(width: 20),
-
-                // Text Content
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w400,
-                          color: Colors.white.withOpacity(0.9),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Arrow indicator
-                Padding(
-                  padding: const EdgeInsets.only(right: 20),
-                  child: Container(
-                    width: 40,
-                    height: 40,
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 70,
+                    height: 70,
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
+                      color: iconBgColor,
                       shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 8,
+                          spreadRadius: 1,
+                        ),
+                      ],
                     ),
-                    child: const Center(
-                      child: Icon(
-                        Icons.arrow_forward_ios_rounded,
-                        color: Colors.white,
-                        size: 18,
+                    child: Center(
+                      child: Icon(icon, size: 32, color: iconColor),
+                    ),
+                  ),
+                  const SizedBox(width: 15),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w400,
+                            color: Colors.white.withOpacity(0.9),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 0),
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          color: Colors.white,
+                          size: 16,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
