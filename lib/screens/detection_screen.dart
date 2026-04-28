@@ -40,6 +40,14 @@ class _DetectionScreenState extends State<DetectionScreen> {
   }
 
   // ============================================================
+  // NEW: Announce that live detection has started
+  // ============================================================
+  Future<void> _announceStart() async {
+    final strings = AppLocalizations.of(context);
+    await _speak(strings.translate('live_detection_started'));
+  }
+
+  // ============================================================
   // IMAGE CONVERSION - YUV to JPEG with RESIZE for speed
   // ============================================================
   Future<String?> _convertImageToBase64(CameraImage image) async {
@@ -171,6 +179,9 @@ class _DetectionScreenState extends State<DetectionScreen> {
 
       if (!mounted) return;
       setState(() {});
+
+      // ========== ANNOUNCE THAT DETECTION IS STARTING ==========
+      await _announceStart();
 
       _controller!.startImageStream(_processCameraImage);
     }
@@ -311,16 +322,24 @@ class _DetectionScreenState extends State<DetectionScreen> {
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Text(
-                          strings.translate('live_object_detection'),
-                          style: const TextStyle(
-                            fontSize: 20,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.8,
+                        child: Container(
+                          alignment: Alignment.center,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              strings.translate('live_object_detection'),
+                              style: const TextStyle(
+                                fontSize: 20,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.8,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
                           ),
                         ),
                       ),
+                      const SizedBox(width: 10),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(

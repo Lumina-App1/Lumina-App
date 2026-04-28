@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' as flutter;
 import 'package:provider/provider.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import '../core/app_settings.dart';
@@ -251,55 +252,63 @@ class _AboutScreenState extends State<AboutScreen> {
     final subtitleColor = settings.highContrast ? Colors.white70 : const Color(0xFF5C6BC0);
     final headerBgColor = settings.highContrast ? const Color(0xFF1E1E1E) : Colors.white;
 
+    // Determine if RTL layout is needed based on language
+    final isRtl = settings.language == 'Urdu';
+    final isUrdu = settings.language == 'Urdu';
+
     return MediaQuery(
       data: MediaQuery.of(context).copyWith(textScaleFactor: settings.largeText ? 1.5 : 1.0),
-      child: Scaffold(
-        backgroundColor: bgColor,
-        body: SafeArea(
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: settings.highContrast
-                  ? null
-                  : const LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0xFFF8FAFD), Color(0xFFE8F4FD)],
+      child: flutter.Directionality(
+        textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+        child: Scaffold(
+          backgroundColor: bgColor,
+          body: SafeArea(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: settings.highContrast
+                    ? null
+                    : const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFFF8FAFD), Color(0xFFE8F4FD)],
+                ),
+                color: settings.highContrast ? Colors.black : null,
               ),
-              color: settings.highContrast ? Colors.black : null,
-            ),
-            child: Column(
-              children: [
-                _buildHeader(strings, textColor, subtitleColor, headerBgColor, cardBgColor),
-                const SizedBox(height: 20),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: ListView(
-                      controller: _scrollController,
-                      children: [
-                        ...aboutItems.asMap().entries.map((entry) {
-                          final index = entry.key;
-                          final item = entry.value;
-                          return Padding(
-                            key: _itemKeys[index],
-                            padding: const EdgeInsets.only(bottom: 16),
-                            child: _buildAboutCard(
-                              title: item['title']!,
-                              content: item['content']!,
-                              icon: _getIcon(index),
-                              gradient: _getCardGradient(index),
-                              onTap: () => _readItem(index),
-                            ),
-                          );
-                        }).toList(),
-                        const SizedBox(height: 30),
-                        _buildMissionCard(strings),
-                        const SizedBox(height: 40),
-                      ],
+              child: Column(
+                children: [
+                  _buildHeader(strings, textColor, subtitleColor, headerBgColor, cardBgColor),
+                  const SizedBox(height: 20),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: ListView(
+                        controller: _scrollController,
+                        children: [
+                          ...aboutItems.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final item = entry.value;
+                            return Padding(
+                              key: _itemKeys[index],
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: _buildAboutCard(
+                                title: item['title']!,
+                                content: item['content']!,
+                                icon: _getIcon(index),
+                                gradient: _getCardGradient(index),
+                                onTap: () => _readItem(index),
+                                isUrdu: isUrdu, // Pass language flag
+                              ),
+                            );
+                          }).toList(),
+                          const SizedBox(height: 30),
+                          _buildMissionCard(strings),
+                          const SizedBox(height: 40),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -307,7 +316,7 @@ class _AboutScreenState extends State<AboutScreen> {
     );
   }
 
-  // ------------------- VISUAL WIDGETS (EXACTLY AS ORIGINAL) -------------------
+  // ------------------- HEADER WITH WHITE CIRCLE ICONS -------------------
   Widget _buildHeader(AppLocalizations strings, Color textColor, Color subtitleColor,
       Color headerBgColor, Color cardBgColor) {
     return Container(
@@ -319,29 +328,73 @@ class _AboutScreenState extends State<AboutScreen> {
       ),
       child: Column(
         children: [
+          // Fixed icons row - same for both languages by forcing LTR
           Row(
+            textDirection: TextDirection.ltr, // ensures icons never flip in RTL mode
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildIconButton(Icons.arrow_back_ios_new_rounded, () async {
-                await _stopSpeaking();
-                final settingsLocal = Provider.of<AppSettings>(context, listen: false);
-                await settingsLocal.tts.speak(strings.translate('returning_to_settings'));
-                await Future.delayed(const Duration(seconds: 2));
-                if (mounted) Navigator.pop(context);
-              }),
-              Row(
-                children: [
-                  _buildIconButton(
-                    _isSpeaking ? Icons.stop_circle_rounded : Icons.play_circle_rounded,
-                        () async {
-                      if (_isSpeaking) {
-                        await _stopSpeaking();
-                      } else {
-                        await _startReadingAll(isFirst: false);
-                      }
-                    },
+              // Back navigation icon - ALWAYS on LEFT side, with white circle
+              Container(
+                width: 44,
+                height: 44,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: IconButton(
+                  icon: Directionality(
+                    textDirection: TextDirection.ltr,
+                    child: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF1A237E), size: 24),
                   ),
-                ],
+                  onPressed: () async {
+                    await _stopSpeaking();
+                    final settingsLocal = Provider.of<AppSettings>(context, listen: false);
+                    await settingsLocal.tts.speak(strings.translate('returning_to_settings'));
+                    await Future.delayed(const Duration(seconds: 2));
+                    if (mounted) Navigator.pop(context);
+                  },
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              ),
+              // Speaker/Play icon - ALWAYS on RIGHT side, with white circle
+              Container(
+                width: 44,
+                height: 44,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: IconButton(
+                  icon: Icon(
+                    _isSpeaking ? Icons.stop_circle_outlined : Icons.volume_up_rounded,
+                    color: const Color(0xFF1A237E),
+                    size: 28,
+                  ),
+                  onPressed: () async {
+                    if (_isSpeaking) {
+                      await _stopSpeaking();
+                    } else {
+                      await _startReadingAll(isFirst: false);
+                    }
+                  },
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
               ),
             ],
           ),
@@ -368,35 +421,25 @@ class _AboutScreenState extends State<AboutScreen> {
           ),
           const SizedBox(height: 20),
           Text(strings.translate('about_lumina_title'),
+              textAlign: TextAlign.center,
               style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: textColor, letterSpacing: 1.5)),
           const SizedBox(height: 8),
           Text(strings.translate('about_subtitle'),
+              textAlign: TextAlign.center,
               style: TextStyle(fontSize: 16, color: subtitleColor, fontWeight: FontWeight.w400, fontStyle: FontStyle.italic)),
         ],
       ),
     );
   }
 
-  Widget _buildIconButton(IconData icon, VoidCallback onPressed) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A237E),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8, spreadRadius: 1)],
-      ),
-      child: IconButton(
-        icon: Icon(icon, color: Colors.white, size: icon == Icons.arrow_back_ios_new_rounded ? 20 : 22),
-        onPressed: onPressed,
-      ),
-    );
-  }
-
+  // ------------------- MODIFIED: Blurred icon moves to left for Urdu -------------------
   Widget _buildAboutCard({
     required String title,
     required String content,
     required IconData icon,
     required List<Color> gradient,
     required VoidCallback onTap,
+    required bool isUrdu,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -410,9 +453,11 @@ class _AboutScreenState extends State<AboutScreen> {
         ),
         child: Stack(
           children: [
+            // Blurred background icon: on right for English, on left for Urdu
             Positioned(
-              right: 16,
               top: 16,
+              right: isUrdu ? null : 16,
+              left: isUrdu ? 16 : null,
               child: Opacity(opacity: 0.1, child: Icon(icon, size: 60, color: Colors.white)),
             ),
             Padding(

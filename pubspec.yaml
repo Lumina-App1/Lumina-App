@@ -61,7 +61,6 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/lumina.png
     - assets/new_logo1.jpg
 
   # An image asset can refer to one or more resolution-specific "variants", see

@@ -12,6 +12,7 @@ import 'home_screen.dart';
 import '../core/app_settings.dart';
 import '../core/app_localizations.dart';
 import '../core/app_config.dart';
+import '../services/voice_command_service.dart';
 
 late List<CameraDescription> cameras;
 
@@ -29,10 +30,7 @@ class _TargetScreenState extends State<TargetScreen> {
   String _currentTarget = "";
   bool _isListeningForTarget = false;
 
-  // 🔴 CHANGE THIS TO YOUR LAPTOP'S IP ADDRESS
-  // final String _backendUrl = "http://10.24.30.129:5000/search";
   final String _backendUrl = AppConfig.backendUrl;
-
   final SpeechToText _speechToText = SpeechToText();
 
   int _frameCounter = 0;
@@ -93,16 +91,13 @@ class _TargetScreenState extends State<TargetScreen> {
         }
       }
 
-      // RESIZE for faster processing
-      final img.Image resizedImage = img.copyResize(rgbImage, width: 160, height: 120);
-
-      final Uint8List jpegBytes = Uint8List.fromList(img.encodeJpg(resizedImage, quality: 50));
+      final img.Image resizedImage = img.copyResize(rgbImage, width: 320, height: 240);
+      final Uint8List jpegBytes = Uint8List.fromList(img.encodeJpg(resizedImage, quality: 80));
       final String base64Image = base64Encode(jpegBytes);
 
       print("✅ JPEG size: ${jpegBytes.length} bytes");
 
       return base64Image;
-
     } catch (e) {
       print("❌ Image conversion error: $e");
       return null;
@@ -153,16 +148,17 @@ class _TargetScreenState extends State<TargetScreen> {
   }
 
   Future<void> _listenForTargetObject() async {
-    final strings = AppLocalizations.of(context);
+    VoiceCommandService().pause();
 
+    final strings = AppLocalizations.of(context);
     bool available = await _speechToText.initialize();
     if (!available) {
       await _speak("Speech recognition not available");
+      VoiceCommandService().resume();
       return;
     }
 
     await _speak(strings.translate('target_start'));
-
     setState(() => _isListeningForTarget = true);
 
     _speechToText.listen(
@@ -171,6 +167,7 @@ class _TargetScreenState extends State<TargetScreen> {
         String target = result.recognizedWords.toLowerCase();
         _currentTarget = target;
         _speak("Searching for $target");
+        VoiceCommandService().resume();
       },
       listenFor: const Duration(seconds: 5),
       pauseFor: const Duration(seconds: 2),
@@ -183,6 +180,7 @@ class _TargetScreenState extends State<TargetScreen> {
         if (_currentTarget.isEmpty) {
           _speak("No target specified. Please try again.");
         }
+        VoiceCommandService().resume();
       }
     });
   }
@@ -240,6 +238,7 @@ class _TargetScreenState extends State<TargetScreen> {
   }
 
   Future<void> _resetSearch() async {
+    VoiceCommandService().resume();
     _currentTarget = "";
     await _speak("Search reset. What object would you like to find?");
     await _listenForTargetObject();
@@ -272,6 +271,8 @@ class _TargetScreenState extends State<TargetScreen> {
 
   Widget _buildBody(AppSettings settings) {
     final strings = AppLocalizations.of(context);
+    // FIX: Use settings.language instead of Localizations.localeOf(context).languageCode
+    final isUrdu = settings.language == 'Urdu';
 
     if (_controller == null || !_controller!.value.isInitialized) {
       return Scaffold(
@@ -287,13 +288,20 @@ class _TargetScreenState extends State<TargetScreen> {
               const SizedBox(height: 20),
               Text(
                 strings.translate('init_camera'),
-                style: const TextStyle(color: Color(0xFFB3E5FC), fontSize: 16, fontWeight: FontWeight.w300),
+                style: const TextStyle(
+                  color: Color(0xFFB3E5FC),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w300,
+                ),
               ),
               if (_isListeningForTarget) ...[
                 const SizedBox(height: 20),
                 const Icon(Icons.mic, color: Colors.red, size: 40),
                 const SizedBox(height: 10),
-                const Text("Listening...", style: TextStyle(color: Colors.white)),
+                const Text(
+                  "Listening...",
+                  style: TextStyle(color: Colors.white, fontSize: 14),
+                ),
               ],
             ],
           ),
@@ -337,13 +345,35 @@ class _TargetScreenState extends State<TargetScreen> {
                       ),
                       const SizedBox(width: 10),
                       Expanded(
+                        child: Container(
+                          alignment: Alignment.center,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              strings.translate('target_search_title'),
+                              style: const TextStyle(
+                                fontSize: 20,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.8,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _isProcessing ? Colors.orange.withOpacity(0.3) : Colors.green.withOpacity(0.3),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         child: Text(
-                          strings.translate('target_search_title'),
-                          style: const TextStyle(
-                            fontSize: 20,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.8,
+                          _isProcessing ? "..." : "●",
+                          style: TextStyle(
+                            color: _isProcessing ? Colors.orange : Colors.green,
+                            fontSize: 12,
                           ),
                         ),
                       ),
@@ -351,21 +381,32 @@ class _TargetScreenState extends State<TargetScreen> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: _currentTarget.isNotEmpty ? Colors.green.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    _currentTarget.isNotEmpty ? "Searching for: $_currentTarget" : "Say your target object",
-                    style: TextStyle(
-                      color: _currentTarget.isNotEmpty ? Colors.green : Colors.orange,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
+                if (_currentTarget.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Text(
+                      "Searching for: $_currentTarget",
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Colors.green,
+                        fontWeight: FontWeight.w400,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Text(
+                      isUrdu ? "اپنا ہدف بتائیں" : "Speak your target object",
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w400,
+                      ),
+                      textAlign: TextAlign.center,
                     ),
                   ),
-                ),
               ],
             ),
           ),
@@ -375,7 +416,7 @@ class _TargetScreenState extends State<TargetScreen> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(15),
                 boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 25, spreadRadius: 3),
+                  const BoxShadow(color: Colors.black, blurRadius: 25, spreadRadius: 3),
                   BoxShadow(color: const Color(0xFF00E5FF).withOpacity(0.15), blurRadius: 35, spreadRadius: 8),
                 ],
               ),
@@ -399,20 +440,20 @@ class _TargetScreenState extends State<TargetScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isPaused ? const Color(0xFFFFB347).withOpacity(0.15) : const Color(0xFF4CAF50).withOpacity(0.15),
+                    color: isPaused ? const Color(0xFFFFB347).withOpacity(0.15) : Colors.green.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(15),
-                    border: Border.all(color: isPaused ? const Color(0xFFFFB347) : const Color(0xFF4CAF50), width: 1.2),
+                    border: Border.all(color: isPaused ? const Color(0xFFFFB347) : Colors.green, width: 1.2),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(isPaused ? Icons.pause : Icons.play_arrow,
-                          color: isPaused ? const Color(0xFFFFB347) : const Color(0xFF4CAF50), size: 16),
+                          color: isPaused ? const Color(0xFFFFB347) : Colors.green, size: 16),
                       const SizedBox(width: 6),
                       Text(
                         isPaused ? strings.translate('paused') : strings.translate('active'),
                         style: TextStyle(
-                          color: isPaused ? const Color(0xFFFFB347) : const Color(0xFF4CAF50),
+                          color: isPaused ? const Color(0xFFFFB347) : Colors.green,
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 1.2,
@@ -426,44 +467,30 @@ class _TargetScreenState extends State<TargetScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     _buildEnhancedButton(
-                      icon: Icons.mic,
-                      label: "Speak",
-                      onTap: () async {
-                        await _controller?.stopImageStream();
-                        await _listenForTargetObject();
-                        _controller?.startImageStream(_processCameraImage);
-                      },
-                      gradient: const [Color(0xFF2196F3), Color(0xFF1976D2)],
-                      iconSize: 30,
-                      buttonSize: 60,
-                    ),
-                    _buildEnhancedButton(
                       icon: isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-                      label: isPaused ? "Resume" : "Pause",
+                      label: isPaused ? strings.translate('resume') : strings.translate('pause'),
                       onTap: _pauseResumeCamera,
                       gradient: const [Color(0xFFFFB347), Color(0xFFFF7A18)],
-                      iconSize: 30,
-                      buttonSize: 60,
+                      iconSize: 34,
+                      buttonSize: 70,
                     ),
                     _buildEnhancedButton(
                       icon: Icons.stop_rounded,
-                      label: "Stop",
+                      label: strings.translate('stop'),
                       onTap: _stopCamera,
                       gradient: const [Color(0xFFFF416C), Color(0xFFFF4B2B)],
-                      iconSize: 30,
-                      buttonSize: 60,
+                      iconSize: 34,
+                      buttonSize: 70,
                     ),
                   ],
                 ),
+                const SizedBox(height: 10),
                 if (_currentTarget.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: GestureDetector(
-                      onTap: _resetSearch,
-                      child: Text(
-                        "Reset Search",
-                        style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
-                      ),
+                  GestureDetector(
+                    onTap: _resetSearch,
+                    child: Text(
+                      "Reset Search",
+                      style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10),
                     ),
                   ),
               ],
@@ -504,10 +531,11 @@ class _TargetScreenState extends State<TargetScreen> {
         const SizedBox(height: 8),
         Text(
           label,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.9),
-            fontSize: label == "Speak" ? 11 : 13,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 13,
             fontWeight: FontWeight.w600,
+            letterSpacing: 0.8,
           ),
         ),
       ],
