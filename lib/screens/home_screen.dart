@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
-
+import 'package:speech_to_text/speech_to_text.dart';
 import '../main.dart';
 import '../core/app_settings.dart';
 import '../core/app_localizations.dart';
@@ -22,55 +23,92 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with RouteAware {
   static bool _permissionDialogShown = false;
+  late VoiceCommandService _voiceService;
+  bool _voiceActive = false;
+  String _voiceStatus = "Initializing...";
+  Timer? _statusTimer;
+  bool _initialized = false;
 
   @override
   void initState() {
     super.initState();
+    _voiceService = VoiceCommandService();
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!await _permissionsGranted()) {
-        if (!_permissionDialogShown) {
-          _permissionDialogShown = true;
-          showPermissionDialog();
-        }
-      } else {
-        speakWelcome();
-        VoiceCommandService().init(context);
+      await _checkPermissionsAndInitialize();
+    });
+  }
+
+  Future<void> _checkPermissionsAndInitialize() async {
+    print('🔍 Checking permissions...');
+
+    var micStatus = await Permission.microphone.status;
+    if (!micStatus.isGranted) {
+      micStatus = await Permission.microphone.request();
+    }
+
+    var camStatus = await Permission.camera.status;
+    if (!camStatus.isGranted) {
+      camStatus = await Permission.camera.request();
+    }
+
+    print('📱 Microphone: ${micStatus.isGranted}, Camera: ${camStatus.isGranted}');
+
+    if (micStatus.isGranted && camStatus.isGranted) {
+      await _voiceService.init(context);
+      _startStatusUpdater();
+      await Future.delayed(const Duration(seconds: 1));
+      await speakWelcome();
+
+      setState(() {
+        _initialized = true;
+        _voiceActive = _voiceService.isActive;
+        _voiceStatus = _voiceService.status;
+      });
+    } else if (!_permissionDialogShown) {
+      _permissionDialogShown = true;
+      showPermissionDialog();
+    }
+  }
+
+  void _startStatusUpdater() {
+    _statusTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      if (mounted) {
+        setState(() {
+          _voiceActive = _voiceService.isActive;
+          _voiceStatus = _voiceService.status;
+        });
       }
     });
   }
+
+
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     routeObserver.subscribe(this, ModalRoute.of(context)! as PageRoute);
+    // Keep context fresh whenever widget tree rebuilds
+    _voiceService.updateContext(context);
   }
 
   @override
   void didPopNext() {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final settings = Provider.of<AppSettings>(context, listen: false);
-      final bool isUrdu = settings.language == 'Urdu';
-      final int delayMs = isUrdu ? 2000 : 800;
-      await Future.delayed(Duration(milliseconds: delayMs));
-      await settings.tts.stop();
-      await Future.delayed(const Duration(milliseconds: 200));
-      speakWelcome();
-    });
+    // Refresh context FIRST, then resume — order matters
+    _voiceService.updateContext(context);
+    _voiceService.resume();
+    speakWelcome();
   }
 
   @override
   void dispose() {
+    _statusTimer?.cancel();
     routeObserver.unsubscribe(this);
-    VoiceCommandService().stop();
+    // pause() not stop() — other screens may still need voice
+    _voiceService.pause();
     final settings = Provider.of<AppSettings>(context, listen: false);
     settings.tts.stop();
     super.dispose();
-  }
-
-  Future<bool> _permissionsGranted() async {
-    final cam = await Permission.camera.status;
-    final mic = await Permission.microphone.status;
-    return cam.isGranted && mic.isGranted;
   }
 
   Future<void> speakWelcome() async {
@@ -86,9 +124,9 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     String fullMessage = strings.translate('welcome_home');
 
     if (isUrdu) {
-      fullMessage += " مدد کا آئیکن اوپر دائیں طرف ہے۔ کسی بھی مدد کے لیے اسے دبائیں۔";
+      fullMessage += " آواز سے کہیں: آبجیکٹ ڈیٹیکشن، ٹارگٹ سرچ، سیٹنگز، یا ہیلپ";
     } else {
-      fullMessage += " Help icon is on the top right corner. Tap it for assistance anytime.";
+      fullMessage += " Say: object detection, target search, settings, or help";
     }
 
     await settings.tts.speak(fullMessage);
@@ -98,8 +136,39 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => PermissionDialog(onAllowed: speakWelcome),
+      builder: (_) => PermissionDialog(
+        onAllowed: () async {
+          await Permission.microphone.request();
+          await Permission.camera.request();
+          await _voiceService.init(context);
+          _startStatusUpdater();
+          await speakWelcome();
+          setState(() {
+            _voiceActive = _voiceService.isActive;
+          });
+        },
+      ),
     );
+  }
+
+  void _navigateToDetection() {
+    _voiceService.pause();
+    Navigator.pushNamed(context, '/detection');
+  }
+
+  void _navigateToTarget() {
+    _voiceService.pause();
+    Navigator.pushNamed(context, '/target');
+  }
+
+  void _navigateToSettings() {
+    _voiceService.pause();
+    Navigator.pushNamed(context, '/settings');
+  }
+
+  void _navigateToHelp() {
+    _voiceService.pause();
+    Navigator.pushNamed(context, '/help');
   }
 
   @override
@@ -107,6 +176,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     final settings = Provider.of<AppSettings>(context);
     final strings = AppLocalizations.of(context);
     final bool isUrdu = settings.language == 'Urdu';
+    final bool voiceActive = _voiceActive;
 
     final bgColor = settings.highContrast ? Colors.black : const Color(0xFFF8FAFD);
     final textColor = settings.highContrast ? Colors.white : const Color(0xFF1A237E);
@@ -137,9 +207,8 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                 padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 24),
                 child: Column(
                   children: [
-                    // Top bar - help icon always on the right, and the icon itself stays "straight"
                     Row(
-                      textDirection: TextDirection.ltr, // forces help icon to right side
+                      textDirection: TextDirection.ltr,
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const SizedBox(width: 48),
@@ -152,38 +221,37 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                             letterSpacing: 1.5,
                           ),
                         ),
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: cardBgColor,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.03),
-                                blurRadius: 4,
+                        Row(
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                color: cardBgColor,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.03),
+                                    blurRadius: 4,
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          child: IconButton(
-                            padding: EdgeInsets.zero,
-                            icon: Directionality(
-                              textDirection: TextDirection.ltr, // prevents question mark from being mirrored in Urdu
-                              child: Icon(Icons.help_outline_rounded, color: textColor, size: 24),
+                              child: IconButton(
+                                padding: EdgeInsets.zero,
+                                icon: Directionality(
+                                  textDirection: TextDirection.ltr,
+                                  child: Icon(Icons.help_outline_rounded, color: textColor, size: 24),
+                                ),
+                                onPressed: () {
+                                  settings.tts.stop();
+                                  _voiceService.pause();
+                                  Navigator.pushNamed(context, '/help');
+                                },
+                              ),
                             ),
-                            onPressed: () {
-                              settings.tts.stop();
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => const HelpScreen(fromSettings: false)),
-                              );
-                            },
-                          ),
+                          ],
                         ),
                       ],
                     ),
                     const SizedBox(height: 60),
-                    // Welcome title
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -212,7 +280,6 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                       textAlign: isUrdu ? TextAlign.right : TextAlign.left,
                     ),
                     const SizedBox(height: 60),
-                    // Scrollable content
                     Expanded(
                       child: SingleChildScrollView(
                         child: Column(
@@ -224,13 +291,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                               iconColor: Colors.white,
                               iconBgColor: const Color(0xFF4CAF50),
                               gradientColors: const [Color(0xFF66BB6A), Color(0xFF43A047)],
-                              onTap: () {
-                                settings.tts.stop();
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (_) => const DetectionScreen()),
-                                );
-                              },
+                              onTap: _navigateToDetection,
                               isUrdu: isUrdu,
                             ),
                             const SizedBox(height: 24),
@@ -241,13 +302,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                               iconColor: Colors.white,
                               iconBgColor: const Color(0xFF2196F3),
                               gradientColors: const [Color(0xFF42A5F5), Color(0xFF1976D2)],
-                              onTap: () {
-                                settings.tts.stop();
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (_) => const TargetScreen()),
-                                );
-                              },
+                              onTap: _navigateToTarget,
                               isUrdu: isUrdu,
                             ),
                             const SizedBox(height: 24),
@@ -258,13 +313,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                               iconColor: Colors.white,
                               iconBgColor: const Color(0xFF9C27B0),
                               gradientColors: const [Color(0xFFAB47BC), Color(0xFF7B1FA2)],
-                              onTap: () {
-                                settings.tts.stop();
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                                );
-                              },
+                              onTap: _navigateToSettings,
                               isUrdu: isUrdu,
                             ),
                             const SizedBox(height: 40),
@@ -275,21 +324,50 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                                 borderRadius: BorderRadius.circular(16),
                                 border: Border.all(color: infoBoxBorder!, width: 1),
                               ),
-                              child: Row(
+                              child: Column(
                                 children: [
-                                  Icon(Icons.volume_up_rounded, color: textColor, size: 24),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      strings.translate('voice_guidance_active'),
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: textColor.withOpacity(0.8),
-                                        fontWeight: FontWeight.w500,
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        voiceActive ? Icons.mic : Icons.mic_off,
+                                        color: voiceActive ? Colors.green : Colors.red,
+                                        size: 24,
                                       ),
-                                      textAlign: isUrdu ? TextAlign.right : TextAlign.left,
-                                    ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          voiceActive
+                                              ? (isUrdu
+                                              ? "🎤 سن رہا ہوں۔ کہیں: آبجیکٹ ڈیٹیکشن، ٹارگٹ سرچ، سیٹنگز، یا ہیلپ"
+                                              : "🎤 Listening. Say: object detection, target search, settings, or help")
+                                              : (isUrdu
+                                              ? "🔴 سن نہیں رہا: $_voiceStatus"
+                                              : "🔴 Not listening: $_voiceStatus"),
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: textColor.withOpacity(0.8),
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                          textAlign: isUrdu ? TextAlign.right : TextAlign.left,
+                                        ),
+                                      ),
+                                    ],
                                   ),
+                                  const SizedBox(height: 8),
+
+                                  if (!voiceActive) ...[
+                                    const SizedBox(height: 8),
+                                    TextButton(
+                                      onPressed: () async {
+                                        await _voiceService.init(context);
+                                        setState(() {});
+                                      },
+                                      child: Text(
+                                        isUrdu ? "دوبارہ شروع کریں" : "Retry Voice",
+                                        style: const TextStyle(color: Colors.blue),
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -378,7 +456,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: isUrdu ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                       children: [
-                        Container(
+                        SizedBox(
                           width: double.infinity,
                           child: Text(
                             title,
@@ -393,7 +471,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Container(
+                        SizedBox(
                           width: double.infinity,
                           child: Text(
                             subtitle,

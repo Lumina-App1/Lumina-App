@@ -9,9 +9,9 @@ import 'screens/settings_screen.dart';
 import 'screens/help_screen.dart';
 import 'screens/about_screen.dart';
 import 'services/voice_command_service.dart';
+import 'core/navigation_service.dart';
 
 final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
-final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

@@ -4,11 +4,11 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:camera/camera.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:image/image.dart' as img;
 import 'home_screen.dart';
+import '../main.dart';
 import '../core/app_settings.dart';
 import '../core/app_localizations.dart';
 import '../core/app_config.dart';
@@ -23,7 +23,7 @@ class TargetScreen extends StatefulWidget {
   State<TargetScreen> createState() => _TargetScreenState();
 }
 
-class _TargetScreenState extends State<TargetScreen> {
+class _TargetScreenState extends State<TargetScreen> with RouteAware {
   CameraController? _controller;
   bool isPaused = false;
   bool _isProcessing = false;
@@ -36,19 +36,96 @@ class _TargetScreenState extends State<TargetScreen> {
   int _frameCounter = 0;
   final int _processEveryNFrames = 15;
 
+  late VoiceCommandService _voiceService;
+
+  @override
+  void initState() {
+    super.initState();
+    _voiceService = VoiceCommandService();
+    _initializeCamera();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      routeObserver.subscribe(this, route);
+    }
+    _voiceService.updateContext(context);
+    _voiceService.setScreenCommands(_handleVoiceCommand);
+  }
+
+  @override
+  void didPopNext() {
+    _voiceService.updateContext(context);
+    _voiceService.setScreenCommands(_handleVoiceCommand);
+    _voiceService.resume();
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    _voiceService.clearScreenCommands();
+    _controller?.stopImageStream();
+    _controller?.dispose();
+    _speechToText.stop();
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    settings.tts.stop();
+    super.dispose();
+  }
+
+  // Handle all voice commands for this screen
+  void _handleVoiceCommand(String command) {
+    print('🎯 Target screen command: "$command"');
+
+    // If currently listening for target, ignore nav commands
+    if (_isListeningForTarget) return;
+
+    if (command.contains('stop') || command.contains('back') || command.contains('home')) {
+      _stopCamera();
+    } else if (command.contains('pause')) {
+      if (!isPaused) _pauseResumeCamera();
+    } else if (command.contains('resume') || command.contains('continue')) {
+      if (isPaused) _pauseResumeCamera();
+    } else if (command.contains('reset') || command.contains('new target') || command.contains('change target')) {
+      _resetSearch();
+    } else if (command.contains('find ') ||
+        command.contains('search for ') ||
+        command.contains('look for ') ||
+        command.contains('detect ')) {
+      // User said "find X" directly — extract target from command
+      String target = command
+          .replaceAll('find ', '')
+          .replaceAll('search for ', '')
+          .replaceAll('look for ', '')
+          .replaceAll('detect ', '')
+          .trim();
+      if (target.isNotEmpty) {
+        _setTargetDirectly(target);
+      }
+    } else if (command.contains('set target') || command.contains('new search')) {
+      _listenForTargetObject();
+    }
+  }
+
+  // Set target directly from voice without extra mic session
+  void _setTargetDirectly(String target) {
+    setState(() {
+      _currentTarget = target;
+    });
+    _speak('Searching for $target');
+    print('✅ Target set directly from voice: "$target"');
+  }
+
   Future<void> _speak(String text) async {
     final settings = Provider.of<AppSettings>(context, listen: false);
     await settings.tts.stop();
     await settings.tts.speak(text);
   }
 
-  // ============================================================
-  // IMAGE CONVERSION - YUV to JPEG with RESIZE for speed
-  // ============================================================
   Future<String?> _convertImageToBase64(CameraImage image) async {
     try {
-      print("🔄 Converting YUV to JPEG...");
-
       final int width = image.width;
       final int height = image.height;
 
@@ -83,7 +160,6 @@ class _TargetScreenState extends State<TargetScreen> {
       }
 
       final img.Image rgbImage = img.Image(width: width, height: height);
-
       for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
           final int index = (y * width + x) * 3;
@@ -93,11 +169,7 @@ class _TargetScreenState extends State<TargetScreen> {
 
       final img.Image resizedImage = img.copyResize(rgbImage, width: 320, height: 240);
       final Uint8List jpegBytes = Uint8List.fromList(img.encodeJpg(resizedImage, quality: 80));
-      final String base64Image = base64Encode(jpegBytes);
-
-      print("✅ JPEG size: ${jpegBytes.length} bytes");
-
-      return base64Image;
+      return base64Encode(jpegBytes);
     } catch (e) {
       print("❌ Image conversion error: $e");
       return null;
@@ -105,10 +177,7 @@ class _TargetScreenState extends State<TargetScreen> {
   }
 
   Future<void> _sendFrameToBackend(CameraImage image) async {
-    if (_isProcessing) return;
-    if (_currentTarget.isEmpty) return;
-    if (isPaused) return;
-
+    if (_isProcessing || _currentTarget.isEmpty || isPaused) return;
     _isProcessing = true;
 
     try {
@@ -134,7 +203,7 @@ class _TargetScreenState extends State<TargetScreen> {
           await _speak(data['voice_message']);
           if (data['meters'] != null && data['meters'] < 0.8) {
             await _speak("Target is within reach. Stopping search.");
-            _currentTarget = "";
+            setState(() => _currentTarget = "");
           }
         } else if (data['status'] == 'not_found' && data['voice_message'] != null) {
           await _speak(data['voice_message']);
@@ -147,14 +216,17 @@ class _TargetScreenState extends State<TargetScreen> {
     }
   }
 
+  // Called on screen launch — asks user to speak target via dedicated mic session
   Future<void> _listenForTargetObject() async {
-    VoiceCommandService().pause();
+    // Temporarily pause screen commands so "find X" doesn't re-trigger
+    _voiceService.clearScreenCommands();
 
     final strings = AppLocalizations.of(context);
     bool available = await _speechToText.initialize();
+
     if (!available) {
       await _speak("Speech recognition not available");
-      VoiceCommandService().resume();
+      _voiceService.setScreenCommands(_handleVoiceCommand);
       return;
     }
 
@@ -163,24 +235,43 @@ class _TargetScreenState extends State<TargetScreen> {
 
     _speechToText.listen(
       onResult: (result) {
-        setState(() => _isListeningForTarget = false);
-        String target = result.recognizedWords.toLowerCase();
-        _currentTarget = target;
-        _speak("Searching for $target");
-        VoiceCommandService().resume();
+        if (result.finalResult) {
+          setState(() => _isListeningForTarget = false);
+
+          String target = result.recognizedWords.toLowerCase().trim();
+          target = target.replaceAll('find ', '');
+          target = target.replaceAll('search for ', '');
+          target = target.replaceAll('look for ', '');
+          target = target.replaceAll('detect ', '');
+
+          if (target.isNotEmpty) {
+            setState(() => _currentTarget = target);
+            _speak("Searching for $target");
+            print('✅ Target set: "$target"');
+          } else {
+            _speak("No target heard. Say find and then the object name.");
+          }
+
+          _speechToText.stop();
+          // Re-register screen commands after target listening is done
+          _voiceService.setScreenCommands(_handleVoiceCommand);
+        }
       },
-      listenFor: const Duration(seconds: 5),
+      listenFor: const Duration(seconds: 6),
       pauseFor: const Duration(seconds: 2),
+      partialResults: true,
+      onDevice: true,
     );
 
-    Future.delayed(const Duration(seconds: 6), () {
-      if (_speechToText.isListening) {
+    // Timeout fallback
+    Future.delayed(const Duration(seconds: 7), () {
+      if (_isListeningForTarget) {
         setState(() => _isListeningForTarget = false);
         _speechToText.stop();
         if (_currentTarget.isEmpty) {
-          _speak("No target specified. Please try again.");
+          _speak("No target set. Say find laptop or find chair anytime.");
         }
-        VoiceCommandService().resume();
+        _voiceService.setScreenCommands(_handleVoiceCommand);
       }
     });
   }
@@ -201,9 +292,7 @@ class _TargetScreenState extends State<TargetScreen> {
   }
 
   void _processCameraImage(CameraImage image) {
-    if (_currentTarget.isEmpty) return;
-    if (isPaused) return;
-
+    if (_currentTarget.isEmpty || isPaused) return;
     _frameCounter++;
     if (_frameCounter % _processEveryNFrames == 0) {
       _sendFrameToBackend(image);
@@ -214,9 +303,7 @@ class _TargetScreenState extends State<TargetScreen> {
     if (_controller == null) return;
     final strings = AppLocalizations.of(context);
 
-    setState(() {
-      isPaused = !isPaused;
-    });
+    setState(() => isPaused = !isPaused);
 
     if (isPaused) {
       await _controller!.pausePreview();
@@ -238,41 +325,25 @@ class _TargetScreenState extends State<TargetScreen> {
   }
 
   Future<void> _resetSearch() async {
-    VoiceCommandService().resume();
-    _currentTarget = "";
+    setState(() => _currentTarget = "");
     await _speak("Search reset. What object would you like to find?");
     await _listenForTargetObject();
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _initializeCamera();
-  }
-
-  @override
-  void dispose() {
-    _controller?.stopImageStream();
-    _controller?.dispose();
-    _speechToText.stop();
-    final settings = Provider.of<AppSettings>(context, listen: false);
-    settings.tts.stop();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final settings = Provider.of<AppSettings>(context);
     return MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaleFactor: settings.largeText ? 1.5 : 1.0),
+      data: MediaQuery.of(context).copyWith(
+          textScaleFactor: settings.largeText ? 1.5 : 1.0),
       child: _buildBody(settings),
     );
   }
 
   Widget _buildBody(AppSettings settings) {
     final strings = AppLocalizations.of(context);
-    // FIX: Use settings.language instead of Localizations.localeOf(context).languageCode
     final isUrdu = settings.language == 'Urdu';
+    final bool voiceActive = _voiceService.isActive;
 
     if (_controller == null || !_controller!.value.isInitialized) {
       return Scaffold(
@@ -298,9 +369,9 @@ class _TargetScreenState extends State<TargetScreen> {
                 const SizedBox(height: 20),
                 const Icon(Icons.mic, color: Colors.red, size: 40),
                 const SizedBox(height: 10),
-                const Text(
-                  "Listening...",
-                  style: TextStyle(color: Colors.white, fontSize: 14),
+                Text(
+                  isUrdu ? "سن رہا ہوں..." : "Listening for target...",
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
                 ),
               ],
             ],
@@ -339,34 +410,35 @@ class _TargetScreenState extends State<TargetScreen> {
                           border: Border.all(color: const Color(0xFF3949AB), width: 1),
                         ),
                         child: IconButton(
-                          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 18),
+                          icon: const Icon(Icons.arrow_back_ios_new,
+                              color: Colors.white, size: 18),
                           onPressed: () => _stopCamera(),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Container(
-                          alignment: Alignment.center,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              strings.translate('target_search_title'),
-                              style: const TextStyle(
-                                fontSize: 20,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.8,
-                              ),
-                              textAlign: TextAlign.center,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            strings.translate('target_search_title'),
+                            style: const TextStyle(
+                              fontSize: 20,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.8,
                             ),
+                            textAlign: TextAlign.center,
                           ),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: _isProcessing ? Colors.orange.withOpacity(0.3) : Colors.green.withOpacity(0.3),
+                          color: _isProcessing
+                              ? Colors.orange.withOpacity(0.3)
+                              : Colors.green.withOpacity(0.3),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
@@ -385,12 +457,27 @@ class _TargetScreenState extends State<TargetScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Text(
-                      "Searching for: $_currentTarget",
+                      isUrdu
+                          ? "تلاش: $_currentTarget"
+                          : "Searching for: $_currentTarget",
                       style: const TextStyle(
-                        fontSize: 13,
-                        color: Colors.green,
-                        fontWeight: FontWeight.w400,
-                      ),
+                          fontSize: 13,
+                          color: Colors.green,
+                          fontWeight: FontWeight.w400),
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                else if (_isListeningForTarget)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Text(
+                      isUrdu
+                          ? "اپنا ہدف بتائیں..."
+                          : "Speak your target object...",
+                      style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.yellow,
+                          fontWeight: FontWeight.w400),
                       textAlign: TextAlign.center,
                     ),
                   )
@@ -398,15 +485,28 @@ class _TargetScreenState extends State<TargetScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Text(
-                      isUrdu ? "اپنا ہدف بتائیں" : "Speak your target object",
+                      isUrdu
+                          ? "کہیں: فائنڈ اور پھر چیز کا نام"
+                          : 'Say "find laptop" or tap mic to set target',
                       style: const TextStyle(
-                        fontSize: 13,
-                        color: Colors.white70,
-                        fontWeight: FontWeight.w400,
-                      ),
+                          fontSize: 13,
+                          color: Colors.white70,
+                          fontWeight: FontWeight.w400),
                       textAlign: TextAlign.center,
                     ),
                   ),
+                const SizedBox(height: 6),
+                // Voice hint
+                Text(
+                  isUrdu
+                      ? 'کہیں: "فائنڈ چیز"، "پاز"، "ریزیوم"، "اسٹاپ"'
+                      : 'Say: "find [object]", "pause", "resume", "stop"',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.greenAccent.withOpacity(0.7),
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
               ],
             ),
           ),
@@ -416,8 +516,12 @@ class _TargetScreenState extends State<TargetScreen> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(15),
                 boxShadow: [
-                  const BoxShadow(color: Colors.black, blurRadius: 25, spreadRadius: 3),
-                  BoxShadow(color: const Color(0xFF00E5FF).withOpacity(0.15), blurRadius: 35, spreadRadius: 8),
+                  const BoxShadow(
+                      color: Colors.black, blurRadius: 25, spreadRadius: 3),
+                  BoxShadow(
+                      color: const Color(0xFF00E5FF).withOpacity(0.15),
+                      blurRadius: 35,
+                      spreadRadius: 8),
                 ],
               ),
               child: ClipRRect(
@@ -427,7 +531,8 @@ class _TargetScreenState extends State<TargetScreen> {
             ),
           ),
           Container(
-            padding: const EdgeInsets.only(top: 10, bottom: 25, left: 30, right: 30),
+            padding: const EdgeInsets.only(
+                top: 10, bottom: 25, left: 30, right: 30),
             decoration: const BoxDecoration(
               color: Color(0xFF0A0E21),
               borderRadius: BorderRadius.only(
@@ -438,22 +543,53 @@ class _TargetScreenState extends State<TargetScreen> {
             child: Column(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isPaused ? const Color(0xFFFFB347).withOpacity(0.15) : Colors.green.withOpacity(0.15),
+                    color: _isListeningForTarget
+                        ? Colors.red.withOpacity(0.15)
+                        : isPaused
+                        ? const Color(0xFFFFB347).withOpacity(0.15)
+                        : Colors.green.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(15),
-                    border: Border.all(color: isPaused ? const Color(0xFFFFB347) : Colors.green, width: 1.2),
+                    border: Border.all(
+                      color: _isListeningForTarget
+                          ? Colors.red
+                          : isPaused
+                          ? const Color(0xFFFFB347)
+                          : Colors.green,
+                      width: 1.2,
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(isPaused ? Icons.pause : Icons.play_arrow,
-                          color: isPaused ? const Color(0xFFFFB347) : Colors.green, size: 16),
+                      Icon(
+                        _isListeningForTarget
+                            ? Icons.mic
+                            : isPaused
+                            ? Icons.pause
+                            : Icons.play_arrow,
+                        color: _isListeningForTarget
+                            ? Colors.red
+                            : isPaused
+                            ? const Color(0xFFFFB347)
+                            : Colors.green,
+                        size: 16,
+                      ),
                       const SizedBox(width: 6),
                       Text(
-                        isPaused ? strings.translate('paused') : strings.translate('active'),
+                        _isListeningForTarget
+                            ? (isUrdu ? "سن رہا ہوں..." : "Listening...")
+                            : isPaused
+                            ? strings.translate('paused')
+                            : strings.translate('active'),
                         style: TextStyle(
-                          color: isPaused ? const Color(0xFFFFB347) : Colors.green,
+                          color: _isListeningForTarget
+                              ? Colors.red
+                              : isPaused
+                              ? const Color(0xFFFFB347)
+                              : Colors.green,
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 1.2,
@@ -467,8 +603,20 @@ class _TargetScreenState extends State<TargetScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     _buildEnhancedButton(
-                      icon: isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-                      label: isPaused ? strings.translate('resume') : strings.translate('pause'),
+                      icon: Icons.mic,
+                      label: isUrdu ? "ہدف بتائیں" : "Set Target",
+                      onTap: _listenForTargetObject,
+                      gradient: const [Color(0xFF2196F3), Color(0xFF1976D2)],
+                      iconSize: 28,
+                      buttonSize: 60,
+                    ),
+                    _buildEnhancedButton(
+                      icon: isPaused
+                          ? Icons.play_arrow_rounded
+                          : Icons.pause_rounded,
+                      label: isPaused
+                          ? strings.translate('resume')
+                          : strings.translate('pause'),
                       onTap: _pauseResumeCamera,
                       gradient: const [Color(0xFFFFB347), Color(0xFFFF7A18)],
                       iconSize: 34,
@@ -489,10 +637,34 @@ class _TargetScreenState extends State<TargetScreen> {
                   GestureDetector(
                     onTap: _resetSearch,
                     child: Text(
-                      "Reset Search",
-                      style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 10),
+                      isUrdu ? "تلاش ری سیٹ کریں" : "Reset Search",
+                      style: TextStyle(
+                          color: Colors.white.withOpacity(0.5), fontSize: 12),
                     ),
                   ),
+                const SizedBox(height: 5),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      voiceActive ? Icons.mic : Icons.mic_off,
+                      color: voiceActive ? Colors.green : Colors.grey,
+                      size: 12,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      voiceActive
+                          ? (isUrdu ? "وائس کمانڈ فعال" : "Voice active")
+                          : (isUrdu
+                          ? "وائس کمانڈ غیر فعال"
+                          : "Voice paused"),
+                      style: TextStyle(
+                        color: voiceActive ? Colors.green : Colors.grey,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -518,11 +690,22 @@ class _TargetScreenState extends State<TargetScreen> {
             width: buttonSize,
             height: buttonSize,
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
+              gradient: LinearGradient(
+                  colors: gradient,
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight),
               shape: BoxShape.circle,
               boxShadow: [
-                BoxShadow(color: gradient.last.withOpacity(0.6), blurRadius: 12, spreadRadius: 2, offset: const Offset(0, 4)),
-                BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, spreadRadius: 1, offset: const Offset(0, 1)),
+                BoxShadow(
+                    color: gradient.last.withOpacity(0.6),
+                    blurRadius: 12,
+                    spreadRadius: 2,
+                    offset: const Offset(0, 4)),
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 4,
+                    spreadRadius: 1,
+                    offset: const Offset(0, 1)),
               ],
             ),
             child: Center(child: Icon(icon, color: Colors.white, size: iconSize)),
@@ -533,10 +716,11 @@ class _TargetScreenState extends State<TargetScreen> {
           label,
           style: const TextStyle(
             color: Colors.white70,
-            fontSize: 13,
+            fontSize: 11,
             fontWeight: FontWeight.w600,
-            letterSpacing: 0.8,
+            letterSpacing: 0.5,
           ),
+          textAlign: TextAlign.center,
         ),
       ],
     );

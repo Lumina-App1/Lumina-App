@@ -8,9 +8,11 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'home_screen.dart';
+import '../main.dart';
 import '../core/app_settings.dart';
 import '../core/app_localizations.dart';
 import '../core/app_config.dart';
+import '../services/voice_command_service.dart';
 
 late List<CameraDescription> cameras;
 
@@ -21,17 +23,62 @@ class DetectionScreen extends StatefulWidget {
   State<DetectionScreen> createState() => _DetectionScreenState();
 }
 
-class _DetectionScreenState extends State<DetectionScreen> {
+class _DetectionScreenState extends State<DetectionScreen> with RouteAware {
   CameraController? _controller;
   bool isPaused = false;
   bool _isProcessing = false;
 
-  // 🔴 CHANGE THIS TO YOUR LAPTOP'S IP ADDRESS
-  // final String _backendUrl = "http://10.24.30.129:5000/detect";
   final String _backendUrl = AppConfig.backendUrl;
-
   int _frameCounter = 0;
-  final int _processEveryNFrames = 15;  // Process every 15th frame
+  final int _processEveryNFrames = 15;
+
+  late VoiceCommandService _voiceService;
+
+  @override
+  void initState() {
+    super.initState();
+    _voiceService = VoiceCommandService();
+    _initializeCamera();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      routeObserver.subscribe(this, route);
+    }
+    _voiceService.updateContext(context);
+    _voiceService.setScreenCommands(_handleVoiceCommand);
+  }
+
+  @override
+  void didPopNext() {
+    _voiceService.updateContext(context);
+    _voiceService.setScreenCommands(_handleVoiceCommand);
+    _voiceService.resume();
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    _voiceService.clearScreenCommands();
+    _controller?.stopImageStream();
+    _controller?.dispose();
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    settings.tts.stop();
+    super.dispose();
+  }
+
+  void _handleVoiceCommand(String command) {
+    if (command.contains('pause') || command.contains('stop detection')) {
+      if (!isPaused) _pauseResumeCamera();
+    } else if (command.contains('resume') || command.contains('continue')) {
+      if (isPaused) _pauseResumeCamera();
+    } else if (command.contains('stop') || command.contains('back') || command.contains('home')) {
+      _stopCamera();
+    }
+  }
 
   Future<void> _speak(String text) async {
     final settings = Provider.of<AppSettings>(context, listen: false);
@@ -39,17 +86,11 @@ class _DetectionScreenState extends State<DetectionScreen> {
     await settings.tts.speak(text);
   }
 
-  // ============================================================
-  // NEW: Announce that live detection has started
-  // ============================================================
   Future<void> _announceStart() async {
     final strings = AppLocalizations.of(context);
     await _speak(strings.translate('live_detection_started'));
   }
 
-  // ============================================================
-  // IMAGE CONVERSION - YUV to JPEG with RESIZE for speed
-  // ============================================================
   Future<String?> _convertImageToBase64(CameraImage image) async {
     try {
       print("🔄 Converting YUV to JPEG...");
@@ -57,15 +98,12 @@ class _DetectionScreenState extends State<DetectionScreen> {
       final int width = image.width;
       final int height = image.height;
 
-      // Get Y, U, V planes
       final Plane yPlane = image.planes[0];
       final Plane uPlane = image.planes[1];
       final Plane vPlane = image.planes[2];
 
-      // Create RGB array
       final List<int> rgbData = List.filled(width * height * 3, 0);
 
-      // YUV to RGB conversion
       for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
           final int yIndex = y * width + x;
@@ -75,12 +113,10 @@ class _DetectionScreenState extends State<DetectionScreen> {
           final int uVal = uPlane.bytes[uvIndex] & 0xFF;
           final int vVal = vPlane.bytes[uvIndex] & 0xFF;
 
-          // YUV to RGB formula
           int r = (yVal + 1.402 * (vVal - 128)).toInt();
           int g = (yVal - 0.344 * (uVal - 128) - 0.714 * (vVal - 128)).toInt();
           int b = (yVal + 1.772 * (uVal - 128)).toInt();
 
-          // Clamp values to 0-255
           r = r.clamp(0, 255);
           g = g.clamp(0, 255);
           b = b.clamp(0, 255);
@@ -92,31 +128,20 @@ class _DetectionScreenState extends State<DetectionScreen> {
         }
       }
 
-      // Create RGB image
       final img.Image rgbImage = img.Image(width: width, height: height);
 
-      // Fill pixels
       for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
           final int index = (y * width + x) * 3;
-          final int r = rgbData[index];
-          final int g = rgbData[index + 1];
-          final int b = rgbData[index + 2];
-          rgbImage.setPixelRgb(x, y, r, g, b);
+          rgbImage.setPixelRgb(x, y, rgbData[index], rgbData[index + 1], rgbData[index + 2]);
         }
       }
 
-      // RESIZE for faster processing (160x120)
       final img.Image resizedImage = img.copyResize(rgbImage, width: 320, height: 240);
-
-      // Encode as JPEG with lower quality
       final Uint8List jpegBytes = Uint8List.fromList(img.encodeJpg(resizedImage, quality: 80));
-
-      // Convert to base64
       final String base64Image = base64Encode(jpegBytes);
 
-      print("✅ JPEG size: ${jpegBytes.length} bytes (was raw: ${yPlane.bytes.length})");
-
+      print("✅ JPEG size: ${jpegBytes.length} bytes");
       return base64Image;
 
     } catch (e) {
@@ -142,13 +167,12 @@ class _DetectionScreenState extends State<DetectionScreen> {
         Uri.parse(_backendUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'image': base64Image}),
-      ).timeout(const Duration(seconds: 30));  // 30 seconds timeout
+      ).timeout(const Duration(seconds: 30));
 
       print("✅ Response status: ${response.statusCode}");
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-
         if (data['detection_found'] == true && data['primary_detection'] != null) {
           String voiceMessage = data['primary_detection']['voice_message'];
           print("🔊 Speaking: $voiceMessage");
@@ -157,7 +181,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
           print("⚠️ No objects detected");
         }
       } else {
-        print("❌ HTTP Error: ${response.statusCode}, Body: ${response.body}");
+        print("❌ HTTP Error: ${response.statusCode}");
       }
 
     } catch (e) {
@@ -172,7 +196,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
     if (cameras.isNotEmpty) {
       _controller = CameraController(
         cameras[0],
-        ResolutionPreset.low,  // Use low resolution for speed
+        ResolutionPreset.low,
         enableAudio: false,
       );
       await _controller!.initialize();
@@ -180,16 +204,13 @@ class _DetectionScreenState extends State<DetectionScreen> {
       if (!mounted) return;
       setState(() {});
 
-      // ========== ANNOUNCE THAT DETECTION IS STARTING ==========
       await _announceStart();
-
       _controller!.startImageStream(_processCameraImage);
     }
   }
 
   void _processCameraImage(CameraImage image) {
     if (isPaused) return;
-
     _frameCounter++;
     if (_frameCounter % _processEveryNFrames == 0) {
       _sendFrameToBackend(image);
@@ -221,21 +242,6 @@ class _DetectionScreenState extends State<DetectionScreen> {
     await settings.tts.speak(strings.translate('detection_stopped'));
     await Future.delayed(const Duration(seconds: 2));
     if (mounted) Navigator.pop(context, true);
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _initializeCamera();
-  }
-
-  @override
-  void dispose() {
-    _controller?.stopImageStream();
-    _controller?.dispose();
-    final settings = Provider.of<AppSettings>(context, listen: false);
-    settings.tts.stop();
-    super.dispose();
   }
 
   @override
@@ -343,7 +349,9 @@ class _DetectionScreenState extends State<DetectionScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: _isProcessing ? Colors.orange.withOpacity(0.3) : Colors.green.withOpacity(0.3),
+                          color: _isProcessing
+                              ? Colors.orange.withOpacity(0.3)
+                              : Colors.green.withOpacity(0.3),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
@@ -370,6 +378,15 @@ class _DetectionScreenState extends State<DetectionScreen> {
                     textAlign: TextAlign.center,
                   ),
                 ),
+                const SizedBox(height: 6),
+                Text(
+                  'Say: "pause", "resume", "stop", or "back"',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.greenAccent.withOpacity(0.7),
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
               ],
             ),
           ),
@@ -379,8 +396,16 @@ class _DetectionScreenState extends State<DetectionScreen> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(15),
                 boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 25, spreadRadius: 3),
-                  BoxShadow(color: const Color(0xFF00E5FF).withOpacity(0.15), blurRadius: 35, spreadRadius: 8),
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.5),
+                    blurRadius: 25,
+                    spreadRadius: 3,
+                  ),
+                  BoxShadow(
+                    color: const Color(0xFF00E5FF).withOpacity(0.15),
+                    blurRadius: 35,
+                    spreadRadius: 8,
+                  ),
                 ],
               ),
               child: ClipRRect(
@@ -403,20 +428,36 @@ class _DetectionScreenState extends State<DetectionScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isPaused ? const Color(0xFFFFB347).withOpacity(0.15) : const Color(0xFF4CAF50).withOpacity(0.15),
+                    color: isPaused
+                        ? const Color(0xFFFFB347).withOpacity(0.15)
+                        : const Color(0xFF4CAF50).withOpacity(0.15),
                     borderRadius: BorderRadius.circular(15),
-                    border: Border.all(color: isPaused ? const Color(0xFFFFB347) : const Color(0xFF4CAF50), width: 1.2),
+                    border: Border.all(
+                      color: isPaused
+                          ? const Color(0xFFFFB347)
+                          : const Color(0xFF4CAF50),
+                      width: 1.2,
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(isPaused ? Icons.pause : Icons.play_arrow,
-                          color: isPaused ? const Color(0xFFFFB347) : const Color(0xFF4CAF50), size: 16),
+                      Icon(
+                        isPaused ? Icons.pause : Icons.play_arrow,
+                        color: isPaused
+                            ? const Color(0xFFFFB347)
+                            : const Color(0xFF4CAF50),
+                        size: 16,
+                      ),
                       const SizedBox(width: 6),
                       Text(
-                        isPaused ? strings.translate('paused') : strings.translate('detecting'),
+                        isPaused
+                            ? strings.translate('paused')
+                            : strings.translate('detecting'),
                         style: TextStyle(
-                          color: isPaused ? const Color(0xFFFFB347) : const Color(0xFF4CAF50),
+                          color: isPaused
+                              ? const Color(0xFFFFB347)
+                              : const Color(0xFF4CAF50),
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 1.2,
@@ -430,8 +471,12 @@ class _DetectionScreenState extends State<DetectionScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     _buildEnhancedButton(
-                      icon: isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-                      label: isPaused ? strings.translate('resume') : strings.translate('pause'),
+                      icon: isPaused
+                          ? Icons.play_arrow_rounded
+                          : Icons.pause_rounded,
+                      label: isPaused
+                          ? strings.translate('resume')
+                          : strings.translate('pause'),
                       onTap: _pauseResumeCamera,
                       gradient: const [Color(0xFFFFB347), Color(0xFFFF7A18)],
                       iconSize: 34,
@@ -450,7 +495,10 @@ class _DetectionScreenState extends State<DetectionScreen> {
                 const SizedBox(height: 10),
                 Text(
                   "AI Backend Connected (30s timeout)",
-                  style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 10),
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.3),
+                    fontSize: 10,
+                  ),
                 ),
               ],
             ),
@@ -477,14 +525,30 @@ class _DetectionScreenState extends State<DetectionScreen> {
             width: buttonSize,
             height: buttonSize,
             decoration: BoxDecoration(
-              gradient: LinearGradient(colors: gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
+              gradient: LinearGradient(
+                colors: gradient,
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               shape: BoxShape.circle,
               boxShadow: [
-                BoxShadow(color: gradient.last.withOpacity(0.6), blurRadius: 12, spreadRadius: 2, offset: const Offset(0, 4)),
-                BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, spreadRadius: 1, offset: const Offset(0, 1)),
+                BoxShadow(
+                  color: gradient.last.withOpacity(0.6),
+                  blurRadius: 12,
+                  spreadRadius: 2,
+                  offset: const Offset(0, 4),
+                ),
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 4,
+                  spreadRadius: 1,
+                  offset: const Offset(0, 1),
+                ),
               ],
             ),
-            child: Center(child: Icon(icon, color: Colors.white, size: iconSize)),
+            child: Center(
+              child: Icon(icon, color: Colors.white, size: iconSize),
+            ),
           ),
         ),
         const SizedBox(height: 8),
