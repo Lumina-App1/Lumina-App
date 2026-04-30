@@ -1,4 +1,4 @@
 class AppConfig {
   static const String backendUrl =
-      "http://192.168.1.8:5000/detect";
+      "http://10.233.20.154:5000/detect";
 }

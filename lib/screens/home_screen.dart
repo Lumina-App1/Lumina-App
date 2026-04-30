@@ -87,9 +87,13 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    routeObserver.subscribe(this, ModalRoute.of(context)! as PageRoute);
-    // Keep context fresh whenever widget tree rebuilds
-    _voiceService.updateContext(context);
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      routeObserver.subscribe(this, route);
+    }
+    if (ModalRoute.of(context)?.isCurrent == true) {
+      _voiceService.updateContext(context);
+    }
   }
 
   @override

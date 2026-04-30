@@ -7,23 +7,19 @@ class AppSettings extends ChangeNotifier {
   factory AppSettings() => _instance;
   AppSettings._internal();
 
-  // Preferences
   String _language = "English";
   double _volume = 0.5;
   bool _highContrast = false;
   bool _largeText = false;
 
-  // TTS instance (shared)
   final FlutterTts _tts = FlutterTts();
 
-  // Getters
   String get language => _language;
   double get volume => _volume;
   bool get highContrast => _highContrast;
   bool get largeText => _largeText;
   FlutterTts get tts => _tts;
 
-  // Load saved preferences
   Future<void> loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     _language = prefs.getString('language') ?? "English";
@@ -31,11 +27,10 @@ class AppSettings extends ChangeNotifier {
     _highContrast = prefs.getBool('contrast') ?? false;
     _largeText = prefs.getBool('largeText') ?? false;
 
-    await _tts.setVolume(_volume);
-
-    // ✅ Set TTS language based on saved preference
-    String ttsLangCode = _language == 'Urdu' ? 'ur-PK' : 'en-US';
+    final String ttsLangCode = _language == 'Urdu' ? 'ur-PK' : 'en-US';
     await _tts.setLanguage(ttsLangCode);
+    await _tts.setVolume(_volume);
+    await _tts.setSpeechRate(0.5);
 
     notifyListeners();
   }
@@ -43,18 +38,18 @@ class AppSettings extends ChangeNotifier {
   Future<void> setLanguage(String newLang) async {
     if (_language == newLang) return;
     _language = newLang;
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('language', newLang);
 
-    // ✅ Set TTS voice language BEFORE speaking confirmation
-    String ttsLangCode = newLang == 'Urdu' ? 'ur-PK' : 'en-US';
+    final String ttsLangCode = newLang == 'Urdu' ? 'ur-PK' : 'en-US';
     await _tts.setLanguage(ttsLangCode);
+    await _tts.setSpeechRate(0.5);
 
     notifyListeners();
 
-    // ✅ Speak confirmation in the NEW language
-    String confirmMsg = newLang == 'Urdu'
-        ? 'زبان تبدیل کر دی گئی اردو'
+    final String confirmMsg = newLang == 'Urdu'
+        ? 'زبان اردو میں تبدیل کر دی گئی ہے'
         : 'Language changed to $newLang';
     await _speak(confirmMsg);
   }
@@ -62,12 +57,13 @@ class AppSettings extends ChangeNotifier {
   Future<void> setVolume(double newVol) async {
     _volume = newVol;
     await _tts.setVolume(newVol);
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('volume', newVol);
+
     notifyListeners();
 
-    // Volume confirmation (keep in current language, but TTS language already set)
-    String volumeMsg = _language == 'Urdu'
+    final String volumeMsg = _language == 'Urdu'
         ? 'آواز کی بلندی ${(newVol * 100).round()} فیصد مقرر کی گئی'
         : 'Volume set to ${(newVol * 100).round()} percent';
     await _speak(volumeMsg);
@@ -75,32 +71,30 @@ class AppSettings extends ChangeNotifier {
 
   Future<void> setHighContrast(bool value) async {
     _highContrast = value;
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('contrast', value);
+
     notifyListeners();
 
-    String contrastMsg;
-    if (_language == 'Urdu') {
-      contrastMsg = value ? 'ہائی کنٹراسٹ فعال کر دیا گیا' : 'ہائی کنٹراسٹ غیر فعال کر دیا گیا';
-    } else {
-      contrastMsg = value ? "High contrast enabled" : "High contrast disabled";
-    }
-    await _speak(contrastMsg);
+    final String msg = _language == 'Urdu'
+        ? (value ? 'ہائی کنٹراسٹ آن کر دیا گیا' : 'ہائی کنٹراسٹ آف کر دیا گیا')
+        : (value ? 'High contrast enabled' : 'High contrast disabled');
+    await _speak(msg);
   }
 
   Future<void> setLargeText(bool value) async {
     _largeText = value;
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('largeText', value);
+
     notifyListeners();
 
-    String largeTextMsg;
-    if (_language == 'Urdu') {
-      largeTextMsg = value ? 'بڑا متن فعال کر دیا گیا' : 'بڑا متن غیر فعال کر دیا گیا';
-    } else {
-      largeTextMsg = value ? "Large text enabled" : "Large text disabled";
-    }
-    await _speak(largeTextMsg);
+    final String msg = _language == 'Urdu'
+        ? (value ? 'ٹیکسٹ بڑا کر دیا گیا' : 'ٹیکسٹ چھوٹا کر دیا گیا')
+        : (value ? 'Large text enabled' : 'Large text disabled');
+    await _speak(msg);
   }
 
   Future<void> _speak(String message) async {

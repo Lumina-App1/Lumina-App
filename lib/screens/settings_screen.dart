@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../main.dart';
 import '../core/app_settings.dart';
@@ -20,6 +19,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
   bool _ttsReady = false;
+  bool _isNavigating = false;
   late VoiceCommandService _voiceService;
 
   @override
@@ -36,16 +36,21 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
     if (route is PageRoute) {
       routeObserver.subscribe(this, route);
     }
-    _voiceService.updateContext(context);
-    _voiceService.setScreenCommands(_handleVoiceCommand);
+    if (ModalRoute.of(context)?.isCurrent == true) {
+      _voiceService.updateContext(context);
+      _voiceService.setScreenCommands(_handleVoiceCommand);
+    }
   }
 
   @override
   void didPopNext() {
+    _isNavigating = false;
     _voiceService.updateContext(context);
     _voiceService.setScreenCommands(_handleVoiceCommand);
     _voiceService.resume();
-    _announceSettings();
+    Future.delayed(const Duration(milliseconds: 2800), () {
+      if (mounted) _announceSettings();
+    });
   }
 
   @override
@@ -59,11 +64,18 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
 
   void _handleVoiceCommand(String command) {
     print('⚙️ Settings command: "$command"');
-    final settings = Provider.of<AppSettings>(context, listen: false);
-    final strings = AppLocalizations.of(context);
 
-    // --- Language ---
-    if (command.contains('english') || command.contains('set language english')) {
+    if (_isNavigating) {
+      print('⚠️ Ignoring command — already navigating');
+      return;
+    }
+
+    final settings = Provider.of<AppSettings>(context, listen: false);
+
+    // ── LANGUAGE ──────────────────────────────────────────────
+    if (command.contains('english') ||
+        command.contains('set language english') ||
+        command.contains('language english')) {
       if (settings.language != 'English') {
         settings.setLanguage('English');
         _speak('Language set to English');
@@ -71,7 +83,13 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
         _speak('Language is already English');
       }
 
-    } else if (command.contains('urdu') || command.contains('اردو')) {
+    } else if (command.contains('urdu') ||
+        command.contains('اردو') ||
+        command.contains('زبان اردو') ||
+        command.contains('language urdu') ||
+        command.contains('zuban urdu') ||
+        command.contains('zuban urdu mein kar do') ||
+        command.contains('language ya zuban')) {
       if (settings.language != 'Urdu') {
         settings.setLanguage('Urdu');
         _speak('زبان اردو پر سیٹ کر دی گئی');
@@ -79,18 +97,32 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
         _speak('زبان پہلے سے اردو ہے');
       }
 
-      // --- Volume ---
+      // ── VOLUME — set to specific percentage ───────────────────
+    } else if (_extractVolumePercent(command) != null) {
+      double newVol = _extractVolumePercent(command)!;
+      settings.setVolume(newVol);
+      _speak('Volume set to ${(newVol * 100).round()} percent');
+
+      // ── VOLUME — increase ─────────────────────────────────────
     } else if (command.contains('volume up') ||
         command.contains('increase volume') ||
-        command.contains('louder')) {
+        command.contains('louder') ||
+        command.contains('awaz barha') ||
+        command.contains('awaz barhao') ||
+        command.contains('آواز بڑھا') ||
+        command.contains('آواز زیادہ')) {
       double newVol = (settings.volume + 0.2).clamp(0.0, 1.0);
       settings.setVolume(newVol);
       _speak('Volume increased to ${(newVol * 100).round()} percent');
 
+      // ── VOLUME — decrease ─────────────────────────────────────
     } else if (command.contains('volume down') ||
         command.contains('decrease volume') ||
         command.contains('lower volume') ||
-        command.contains('quieter')) {
+        command.contains('quieter') ||
+        command.contains('awaz kam') ||
+        command.contains('awaz kam karo') ||
+        command.contains('آواز کم')) {
       double newVol = (settings.volume - 0.2).clamp(0.0, 1.0);
       settings.setVolume(newVol);
       _speak('Volume decreased to ${(newVol * 100).round()} percent');
@@ -107,11 +139,16 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
       settings.setVolume(0.0);
       _speak('Volume muted');
 
-      // --- High Contrast ---
+      // ── HIGH CONTRAST — on ────────────────────────────────────
     } else if (command.contains('high contrast on') ||
         command.contains('enable high contrast') ||
         command.contains('turn on high contrast') ||
-        command.contains('contrast on')) {
+        command.contains('contrast on') ||
+        command.contains('high contrast on kar') ||
+        command.contains('high contrast mode on') ||
+        command.contains('contrast on kar do') ||
+        command.contains('ہائی کنٹراسٹ آن') ||
+        command.contains('high contrast enable')) {
       if (!settings.highContrast) {
         settings.setHighContrast(true);
         _speak('High contrast enabled');
@@ -119,10 +156,16 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
         _speak('High contrast is already on');
       }
 
+      // ── HIGH CONTRAST — off ───────────────────────────────────
     } else if (command.contains('high contrast off') ||
         command.contains('disable high contrast') ||
         command.contains('turn off high contrast') ||
-        command.contains('contrast off')) {
+        command.contains('contrast off') ||
+        command.contains('high contrast band') ||
+        command.contains('high contrast mode band') ||
+        command.contains('contrast band kar do') ||
+        command.contains('ہائی کنٹراسٹ بند') ||
+        command.contains('high contrast disable')) {
       if (settings.highContrast) {
         settings.setHighContrast(false);
         _speak('High contrast disabled');
@@ -130,17 +173,25 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
         _speak('High contrast is already off');
       }
 
-    } else if (command.contains('high contrast') || command.contains('contrast')) {
-      // Toggle if user just says "high contrast"
+    } else if (command.contains('high contrast') ||
+        command.contains('contrast')) {
       settings.setHighContrast(!settings.highContrast);
-      _speak(settings.highContrast ? 'High contrast enabled' : 'High contrast disabled');
+      _speak(settings.highContrast
+          ? 'High contrast enabled'
+          : 'High contrast disabled');
 
-      // --- Large Text ---
+      // ── LARGE TEXT — on ───────────────────────────────────────
     } else if (command.contains('large text on') ||
         command.contains('enable large text') ||
         command.contains('turn on large text') ||
         command.contains('bigger text') ||
-        command.contains('increase text')) {
+        command.contains('increase text') ||
+        command.contains('large text enable') ||
+        command.contains('bara matan on') ||
+        command.contains('bara text on') ||
+        command.contains('bada text on kar') ||
+        command.contains('بڑا متن آن') ||
+        command.contains('بڑا ٹیکسٹ')) {
       if (!settings.largeText) {
         settings.setLargeText(true);
         _speak('Large text enabled');
@@ -148,11 +199,18 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
         _speak('Large text is already on');
       }
 
+      // ── LARGE TEXT — off ──────────────────────────────────────
     } else if (command.contains('large text off') ||
         command.contains('disable large text') ||
         command.contains('turn off large text') ||
         command.contains('smaller text') ||
-        command.contains('decrease text')) {
+        command.contains('decrease text') ||
+        command.contains('large text disable') ||
+        command.contains('bara matan band') ||
+        command.contains('bara text band') ||
+        command.contains('bada text band kar') ||
+        command.contains('بڑا متن بند') ||
+        command.contains('چھوٹا ٹیکسٹ')) {
       if (settings.largeText) {
         settings.setLargeText(false);
         _speak('Large text disabled');
@@ -160,30 +218,57 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
         _speak('Large text is already off');
       }
 
-    } else if (command.contains('large text') || command.contains('text size')) {
-      // Toggle if user just says "large text"
+    } else if (command.contains('large text') ||
+        command.contains('text size') ||
+        command.contains('bara matan') ||
+        command.contains('بڑا متن')) {
       settings.setLargeText(!settings.largeText);
-      _speak(settings.largeText ? 'Large text enabled' : 'Large text disabled');
+      _speak(settings.largeText
+          ? 'Large text enabled'
+          : 'Large text disabled');
 
-      // --- Navigation ---
-    } else if (command.contains('about')) {
+      // ── NAVIGATION — about first, then help, then home/back ───
+      // IMPORTANT: help and about checked before home/back to avoid
+      // partial match conflicts
+    } else if (command.contains('about') ||
+        command.contains('about page') ||
+        command.contains('open about') ||
+        command.contains('abaout') ||
+        command.contains('ابائوٹ')) {
+      print('✅ Opening about from settings');
       _openPage(
         const AboutScreen(),
         'Opening about page',
         FromPage.about,
       );
 
-    } else if (command.contains('help')) {
+    } else if (command.contains('help') ||
+        command.contains('help page') ||
+        command.contains('open help') ||
+        command.contains('مدد') ||
+        command.contains('help screen')) {
+      print('✅ Opening help from settings');
       _openPage(
         const HelpScreen(fromSettings: true),
         'Opening help page',
         FromPage.help,
       );
 
-    } else if (command.contains('home') || command.contains('back')) {
+    } else if (command.contains('return to home screen') ||
+        command.contains('return to home') ||
+        command.contains('go to home screen') ||
+        command.contains('go to home') ||
+        command.contains('go home') ||
+        command.contains('home screen') ||
+        command.contains('home') ||
+        command.contains('back') ||
+        command.contains('wapis jao') ||
+        command.contains('ghar') ||
+        command.contains('wapis') ||
+        command.contains('واپس')) {
       _goBack();
 
-      // --- Status announcements ---
+      // ── STATUS ────────────────────────────────────────────────
     } else if (command.contains('current settings') ||
         command.contains('what are the settings') ||
         command.contains('read settings')) {
@@ -192,6 +277,27 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
     } else {
       print('❌ No settings match for: "$command"');
     }
+  }
+
+  double? _extractVolumePercent(String command) {
+    final patterns = [
+      RegExp(r'set volume to (\d+)'),
+      RegExp(r'volume to (\d+)'),
+      RegExp(r'volume (\d+)'),
+      RegExp(r'(\d+) percent'),
+      RegExp(r'(\d+)%'),
+      RegExp(r'set volume (\d+)'),
+    ];
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(command);
+      if (match != null) {
+        final value = int.tryParse(match.group(1) ?? '');
+        if (value != null && value >= 0 && value <= 100) {
+          return value / 100.0;
+        }
+      }
+    }
+    return null;
   }
 
   void _announceCurrentSettings() {
@@ -224,51 +330,51 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
   }
 
   Future<void> _announceSettings() async {
-    if (!_ttsReady) return;
+    if (!_ttsReady || !mounted) return;
     final strings = AppLocalizations.of(context);
-    String backMessage;
+    String message;
     switch (widget.fromPage) {
       case FromPage.about:
-        backMessage = strings.translate('about_announce');
+        message = strings.translate('about_announce');
         break;
       case FromPage.help:
-        backMessage = strings.translate('help_announce');
+        message = strings.translate('help_announce');
         break;
       default:
-        backMessage = strings.translate('settings_announce');
+        message = strings.translate('settings_announce');
     }
-    await _speak(backMessage);
+    await _speak(message);
   }
 
   Future<void> _openPage(Widget page, String message, FromPage from) async {
+    if (_isNavigating) return;
+    _isNavigating = true;
+
     await _speak(message);
-    await Future.delayed(const Duration(milliseconds: 1200));
+    await Future.delayed(const Duration(milliseconds: 800));
+
+    if (!mounted) {
+      _isNavigating = false;
+      return;
+    }
+
     await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
 
-    final settings = Provider.of<AppSettings>(context, listen: false);
-    final bool isUrdu = settings.language == 'Urdu';
-    final int delayMs = isUrdu ? 1300 : 800;
-    await Future.delayed(Duration(milliseconds: delayMs));
-    await settings.tts.stop();
-    await Future.delayed(const Duration(milliseconds: 200));
-    _announceSettings();
+    // Safety fallback reset — didPopNext is the primary reset
+    _isNavigating = false;
   }
 
   Future<void> _goBack() async {
+    if (_isNavigating) return;
+    _isNavigating = true;
     final settings = Provider.of<AppSettings>(context, listen: false);
     final strings = AppLocalizations.of(context);
-    String msg;
-    if (widget.fromPage == FromPage.home) {
-      msg = strings.translate('returning_home');
-    } else if (widget.fromPage == FromPage.about) {
-      msg = strings.translate('returning_about');
-    } else {
-      msg = strings.translate('returning_help');
-    }
-    await _speak(msg);
+    await settings.tts.stop();
+    await Future.delayed(const Duration(milliseconds: 100));
+    await settings.tts.speak(strings.translate('returning_home'));
     final bool isUrdu = settings.language == 'Urdu';
-    final int delayMs = isUrdu ? 1300 : 1200;
-    await Future.delayed(Duration(milliseconds: delayMs));
+    await Future.delayed(Duration(milliseconds: isUrdu ? 1800 : 1500));
+    _isNavigating = false;
     if (mounted) Navigator.pop(context);
   }
 
@@ -280,15 +386,19 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
     return _buildContent(settings, strings, isUrdu);
   }
 
-  Widget _buildContent(AppSettings settings, AppLocalizations strings, bool isUrdu) {
-    final bgColor = settings.highContrast ? Colors.black : const Color(0xFFF8FAFD);
-    final textColor = settings.highContrast ? Colors.white : const Color(0xFF1A237E);
-    final cardColor = settings.highContrast ? const Color(0xFF1E1E1E) : Colors.white;
+  Widget _buildContent(
+      AppSettings settings, AppLocalizations strings, bool isUrdu) {
+    final bgColor =
+    settings.highContrast ? Colors.black : const Color(0xFFF8FAFD);
+    final textColor =
+    settings.highContrast ? Colors.white : const Color(0xFF1A237E);
+    final cardColor =
+    settings.highContrast ? const Color(0xFF1E1E1E) : Colors.white;
     final accentColor = const Color(0xFF00E5FF);
 
     return MediaQuery(
-      data: MediaQuery.of(context).copyWith(
-          textScaleFactor: settings.largeText ? 1.5 : 1.0),
+      data: MediaQuery.of(context)
+          .copyWith(textScaleFactor: settings.largeText ? 1.5 : 1.0),
       child: Scaffold(
         backgroundColor: bgColor,
         appBar: AppBar(
@@ -297,11 +407,13 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
           elevation: 0,
           centerTitle: true,
           title: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            padding:
+            const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
             decoration: BoxDecoration(
               color: bgColor.withOpacity(0.9),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: accentColor.withOpacity(0.3), width: 1),
+              border: Border.all(
+                  color: accentColor.withOpacity(0.3), width: 1),
             ),
             child: Text(
               strings.translate('settings_title'),
@@ -318,7 +430,12 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
             decoration: BoxDecoration(
               color: cardColor,
               shape: BoxShape.circle,
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, spreadRadius: 1)],
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 8,
+                    spreadRadius: 1)
+              ],
             ),
             child: IconButton(
               icon: Icon(Icons.arrow_back_ios_new_rounded, color: textColor),
@@ -331,7 +448,12 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
               decoration: BoxDecoration(
                 color: cardColor,
                 shape: BoxShape.circle,
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, spreadRadius: 1)],
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 8,
+                      spreadRadius: 1)
+                ],
               ),
               child: IconButton(
                 icon: Icon(Icons.help_outline_rounded, color: textColor),
@@ -349,17 +471,22 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
           child: CustomScrollView(
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 20, vertical: 20),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
+
                     // Voice commands hint box
                     Container(
                       padding: const EdgeInsets.all(14),
                       margin: const EdgeInsets.only(bottom: 16),
                       decoration: BoxDecoration(
-                        color: accentColor.withOpacity(0.08),
+                        color: settings.highContrast
+                            ? const Color(0xFF1E1E1E)
+                            : const Color(0xFF1A237E).withOpacity(0.08),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: accentColor.withOpacity(0.3), width: 1),
+                        border: Border.all(
+                            color: accentColor.withOpacity(0.3), width: 1),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -369,9 +496,11 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
                               Icon(Icons.mic, color: accentColor, size: 16),
                               const SizedBox(width: 8),
                               Text(
-                                'Voice Commands',
+                                isUrdu ? 'وائس کمانڈز' : 'Voice Commands',
                                 style: TextStyle(
-                                  color: accentColor,
+                                  color: settings.highContrast
+                                      ? Colors.white
+                                      : Colors.black87,
                                   fontSize: 13,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -379,15 +508,25 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
                             ],
                           ),
                           const SizedBox(height: 8),
-                          _voiceHint('"volume up" / "volume down"'),
-                          _voiceHint('"high contrast on" / "high contrast off"'),
-                          _voiceHint('"large text on" / "large text off"'),
-                          _voiceHint('"set language English" / "Urdu"'),
-                          _voiceHint('"about", "help", "home"'),
-                          _voiceHint('"read settings" for current status'),
+                          if (isUrdu) ...[
+                            _voiceHint('آواز بڑھاؤ / آواز کم کرو', settings.highContrast),
+                            _voiceHint('آواز 50 فیصد پر سیٹ کرو', settings.highContrast),
+                            _voiceHint('ہائی کنٹراسٹ آن / بند', settings.highContrast),
+                            _voiceHint('بڑا متن آن / بند', settings.highContrast),
+                            _voiceHint('زبان انگریزی / اردو', settings.highContrast),
+                            _voiceHint('اباؤٹ، ہیلپ، واپس', settings.highContrast),
+                          ] else ...[
+                            _voiceHint('"volume up" / "volume down"', settings.highContrast),
+                            _voiceHint('"set volume to 50" / "volume 70"', settings.highContrast),
+                            _voiceHint('"enable high contrast" / "disable high contrast"', settings.highContrast),
+                            _voiceHint('"enable large text" / "disable large text"', settings.highContrast),
+                            _voiceHint('"set language English" / "Urdu"', settings.highContrast),
+                            _voiceHint('"about", "help", "return to home screen"', settings.highContrast),
+                          ],
                         ],
                       ),
                     ),
+
                     _languageCard(
                       title: strings.translate('language'),
                       icon: Icons.language_rounded,
@@ -410,7 +549,8 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
                       child: Column(
                         children: [
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            mainAxisAlignment:
+                            MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
                                 "${(settings.volume * 100).round()}%",
@@ -434,7 +574,8 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
                           SliderTheme(
                             data: SliderTheme.of(context).copyWith(
                               activeTrackColor: accentColor,
-                              inactiveTrackColor: accentColor.withOpacity(0.2),
+                              inactiveTrackColor:
+                              accentColor.withOpacity(0.2),
                               thumbColor: accentColor,
                               overlayColor: accentColor.withOpacity(0.1),
                               thumbShape: const RoundSliderThumbShape(
@@ -484,7 +625,8 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF1A237E).withOpacity(0.3),
+                            color:
+                            const Color(0xFF1A237E).withOpacity(0.3),
                             blurRadius: 15,
                             spreadRadius: 2,
                             offset: const Offset(0, 4),
@@ -536,17 +678,24 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
     );
   }
 
-  Widget _voiceHint(String text) {
+  Widget _voiceHint(String text, bool highContrast) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         children: [
-          const Icon(Icons.chevron_right, color: Colors.white54, size: 14),
+          Icon(Icons.chevron_right,
+              color: highContrast ? Colors.white54 : Colors.black45,
+              size: 14),
           const SizedBox(width: 4),
-          Text(
-            text,
-            style: const TextStyle(
-                color: Colors.white70, fontSize: 11, fontStyle: FontStyle.italic),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: highContrast ? Colors.white70 : Colors.black87,
+                fontSize: 11,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
           ),
         ],
       ),
@@ -568,7 +717,13 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, spreadRadius: 1, offset: const Offset(0, 2))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              spreadRadius: 1,
+              offset: const Offset(0, 2))
+        ],
         border: Border.all(color: const Color(0xFFE8F4FD), width: 1),
       ),
       child: Padding(
@@ -580,7 +735,9 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: iconColor.withOpacity(0.1), shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                      color: iconColor.withOpacity(0.1),
+                      shape: BoxShape.circle),
                   child: Icon(icon, color: iconColor, size: 22),
                 ),
                 const SizedBox(width: 12),
@@ -589,7 +746,9 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
-                    color: settings.highContrast ? Colors.white : const Color(0xFF1A237E),
+                    color: settings.highContrast
+                        ? Colors.white
+                        : const Color(0xFF1A237E),
                     letterSpacing: 0.3,
                   ),
                 ),
@@ -601,16 +760,20 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
               decoration: BoxDecoration(
                 color: bgColor,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: accentColor.withOpacity(0.2), width: 1.5),
+                border: Border.all(
+                    color: accentColor.withOpacity(0.2), width: 1.5),
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   value: settings.language,
                   isExpanded: true,
-                  icon: Icon(Icons.arrow_drop_down_rounded, color: textColor),
+                  icon: Icon(Icons.arrow_drop_down_rounded,
+                      color: textColor),
                   dropdownColor: bgColor,
                   style: TextStyle(
-                      fontSize: 16, color: textColor, fontWeight: FontWeight.w500),
+                      fontSize: 16,
+                      color: textColor,
+                      fontWeight: FontWeight.w500),
                   alignment: isUrdu
                       ? AlignmentDirectional.centerEnd
                       : AlignmentDirectional.centerStart,
@@ -624,12 +787,15 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
                         width: double.infinity,
                         child: Row(
                           children: [
-                            const Icon(Icons.language, color: Color(0xFF4CAF50), size: 20),
+                            const Icon(Icons.language,
+                                color: Color(0xFF4CAF50), size: 20),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
                                 strings.translate('english'),
-                                textAlign: isUrdu ? TextAlign.right : TextAlign.left,
+                                textAlign: isUrdu
+                                    ? TextAlign.right
+                                    : TextAlign.left,
                               ),
                             ),
                           ],
@@ -645,12 +811,15 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
                         width: double.infinity,
                         child: Row(
                           children: [
-                            const Icon(Icons.translate_rounded, color: Color(0xFF2196F3), size: 20),
+                            const Icon(Icons.translate_rounded,
+                                color: Color(0xFF2196F3), size: 20),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
                                 strings.translate('urdu'),
-                                textAlign: isUrdu ? TextAlign.right : TextAlign.left,
+                                textAlign: isUrdu
+                                    ? TextAlign.right
+                                    : TextAlign.left,
                               ),
                             ),
                           ],
@@ -668,12 +837,15 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
                       width: double.infinity,
                       child: Row(
                         children: [
-                          const Icon(Icons.language, color: Color(0xFF4CAF50), size: 20),
+                          const Icon(Icons.language,
+                              color: Color(0xFF4CAF50), size: 20),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               strings.translate('english'),
-                              textAlign: isUrdu ? TextAlign.right : TextAlign.left,
+                              textAlign: isUrdu
+                                  ? TextAlign.right
+                                  : TextAlign.left,
                             ),
                           ),
                         ],
@@ -683,12 +855,15 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
                       width: double.infinity,
                       child: Row(
                         children: [
-                          const Icon(Icons.translate_rounded, color: Color(0xFF2196F3), size: 20),
+                          const Icon(Icons.translate_rounded,
+                              color: Color(0xFF2196F3), size: 20),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               strings.translate('urdu'),
-                              textAlign: isUrdu ? TextAlign.right : TextAlign.left,
+                              textAlign: isUrdu
+                                  ? TextAlign.right
+                                  : TextAlign.left,
                             ),
                           ),
                         ],
@@ -717,7 +892,13 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, spreadRadius: 1, offset: const Offset(0, 2))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              spreadRadius: 1,
+              offset: const Offset(0, 2))
+        ],
         border: Border.all(color: const Color(0xFFE8F4FD), width: 1),
       ),
       child: Padding(
@@ -729,7 +910,9 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: iconColor.withOpacity(0.1), shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                      color: iconColor.withOpacity(0.1),
+                      shape: BoxShape.circle),
                   child: Icon(icon, color: iconColor, size: 22),
                 ),
                 const SizedBox(width: 12),
@@ -738,7 +921,9 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
-                    color: settings.highContrast ? Colors.white : const Color(0xFF1A237E),
+                    color: settings.highContrast
+                        ? Colors.white
+                        : const Color(0xFF1A237E),
                     letterSpacing: 0.3,
                   ),
                 ),
@@ -767,7 +952,13 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, spreadRadius: 1, offset: const Offset(0, 2))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              spreadRadius: 1,
+              offset: const Offset(0, 2))
+        ],
         border: Border.all(color: const Color(0xFFE8F4FD), width: 1),
       ),
       child: Padding(
@@ -780,7 +971,8 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
               value: value,
               onChanged: onChanged,
               activeColor: const Color(0xFF00E5FF),
-              activeTrackColor: const Color(0xFF00E5FF).withOpacity(0.5),
+              activeTrackColor:
+              const Color(0xFF00E5FF).withOpacity(0.5),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -850,7 +1042,8 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
               value: value,
               onChanged: onChanged,
               activeColor: const Color(0xFF00E5FF),
-              activeTrackColor: const Color(0xFF00E5FF).withOpacity(0.5),
+              activeTrackColor:
+              const Color(0xFF00E5FF).withOpacity(0.5),
             ),
           ],
         ),

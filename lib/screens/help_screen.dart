@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_tts/flutter_tts.dart';
+import '../main.dart';
 import '../core/app_settings.dart';
 import '../core/app_localizations.dart';
+import '../services/voice_command_service.dart';
 
 class HelpScreen extends StatefulWidget {
   final bool fromSettings;
@@ -14,7 +15,7 @@ class HelpScreen extends StatefulWidget {
   State<HelpScreen> createState() => _HelpScreenState();
 }
 
-class _HelpScreenState extends State<HelpScreen> {
+class _HelpScreenState extends State<HelpScreen> with RouteAware {
   final ScrollController _scrollController = ScrollController();
   final Map<int, GlobalKey> _itemKeys = {};
   late List<Map<String, String>> helpItems;
@@ -30,15 +31,25 @@ class _HelpScreenState extends State<HelpScreen> {
   final double defaultTtsRate = 0.5;
 
   Completer<void>? _ttsCompleter;
+  late VoiceCommandService _voiceService;
 
   @override
   void initState() {
     super.initState();
+    _voiceService = VoiceCommandService();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      routeObserver.subscribe(this, route);
+    }
+    if (ModalRoute.of(context)?.isCurrent == true) {
+      _voiceService.updateContext(context);
+      _voiceService.setScreenCommands(_handleVoiceCommand);
+    }
     if (!_dataInitialized) {
       _initializeData();
       _dataInitialized = true;
@@ -46,8 +57,93 @@ class _HelpScreenState extends State<HelpScreen> {
     }
   }
 
-  // CRITICAL: This helper forces proper RTL alignment for Urdu
-  Widget _buildRtlText(String text, {required TextStyle style, TextAlign? align}) {
+  @override
+  void didPopNext() {
+    _voiceService.updateContext(context);
+    _voiceService.setScreenCommands(_handleVoiceCommand);
+    _voiceService.resume();
+  }
+
+  @override
+  void dispose() {
+    routeObserver.unsubscribe(this);
+    _voiceService.clearScreenCommands();
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    settings.tts.stop();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  // Voice commands — back to settings or back to home depending on fromSettings
+  void _handleVoiceCommand(String command) {
+    print('🆘 Help screen command: "$command"');
+    final bool isUrdu = ttsLanguage == 'ur-PK';
+
+    if (widget.fromSettings) {
+      // Opened from settings — listen for "return to settings" and urdu equivalent
+      if (command.contains('settings') ||
+          command.contains('return to settings') ||
+          command.contains('back to settings') ||
+          command.contains('go to settings') ||
+          command.contains('setting') ||
+          command.contains('wapis settings') ||
+          command.contains('settings par wapis') ||
+          command.contains('settings pe wapis') ||
+          command.contains('back') ||
+          command.contains('return') ||
+          command.contains('wapis') ||
+          command.contains('واپس') ||
+          command.contains('سیٹنگز')) {
+        _goBack();
+      }
+    } else {
+      // Opened from home — listen for "back to home" and urdu equivalent
+      if (command.contains('home') ||
+          command.contains('return to home') ||
+          command.contains('back to home') ||
+          command.contains('go to home') ||
+          command.contains('go home') ||
+          command.contains('home screen') ||
+          command.contains('return to home screen') ||
+          command.contains('back to home screen') ||
+          command.contains('back') ||
+          command.contains('return') ||
+          command.contains('wapis') ||
+          command.contains('ghar') ||
+          command.contains('واپس') ||
+          command.contains('گھر') ||
+          command.contains('home par wapis') ||
+          command.contains('wapis jao')) {
+        _goBack();
+      }
+    }
+  }
+
+  Future<void> _goBack() async {
+    await _stopSpeaking();
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    final strings = AppLocalizations.of(context);
+    final bool isUrdu = ttsLanguage == 'ur-PK';
+
+    String message;
+    if (widget.fromSettings) {
+      message = isUrdu
+          ? 'سیٹنگز اسکرین پر واپس جا رہے ہیں'
+          : 'Returning to Settings Screen';
+    } else {
+      message = isUrdu
+          ? 'ہوم اسکرین پر واپس جا رہے ہیں'
+          : 'Returning to Home Screen';
+    }
+
+    await Future.delayed(const Duration(milliseconds: 200));
+    await settings.tts.speak(message);
+    await Future.delayed(Duration(milliseconds: isUrdu ? 2000 : 1800));
+    if (mounted) Navigator.pop(context);
+  }
+
+  Widget _buildRtlText(String text,
+      {required TextStyle style, TextAlign? align}) {
     final isUrdu = ttsLanguage == 'ur-PK';
     return SizedBox(
       width: double.infinity,
@@ -61,19 +157,44 @@ class _HelpScreenState extends State<HelpScreen> {
     );
   }
 
-  // --------------------------------------------------------------------------
-  // Initialization & Data
-  // --------------------------------------------------------------------------
   void _initializeData() {
     final strings = AppLocalizations.of(context);
     helpItems = [
-      {'title': strings.translate('navigation'), 'content': strings.translate('navigation_content'), 'icon': 'navigation'},
-      {'title': strings.translate('settings_help'), 'content': strings.translate('settings_help_content'), 'icon': 'settings'},
-      {'title': strings.translate('about_page'), 'content': strings.translate('about_page_content'), 'icon': 'info'},
-      {'title': strings.translate('object_detection_help'), 'content': strings.translate('object_detection_help_content'), 'icon': 'detection'},
-      {'title': strings.translate('target_search_help'), 'content': strings.translate('target_search_help_content'), 'icon': 'search'},
-      {'title': strings.translate('voice_control'), 'content': strings.translate('voice_control_content'), 'icon': 'voice'},
-      {'title': strings.translate('help_help'), 'content': strings.translate('help_help_content'), 'icon': 'help'},
+      {
+        'title': strings.translate('navigation'),
+        'content': strings.translate('navigation_content'),
+        'icon': 'navigation'
+      },
+      {
+        'title': strings.translate('settings_help'),
+        'content': strings.translate('settings_help_content'),
+        'icon': 'settings'
+      },
+      {
+        'title': strings.translate('about_page'),
+        'content': strings.translate('about_page_content'),
+        'icon': 'info'
+      },
+      {
+        'title': strings.translate('object_detection_help'),
+        'content': strings.translate('object_detection_help_content'),
+        'icon': 'detection'
+      },
+      {
+        'title': strings.translate('target_search_help'),
+        'content': strings.translate('target_search_help_content'),
+        'icon': 'search'
+      },
+      {
+        'title': strings.translate('voice_control'),
+        'content': strings.translate('voice_control_content'),
+        'icon': 'voice'
+      },
+      {
+        'title': strings.translate('help_help'),
+        'content': strings.translate('help_help_content'),
+        'icon': 'help'
+      },
     ];
 
     for (int i = 0; i < helpItems.length; i++) {
@@ -88,17 +209,15 @@ class _HelpScreenState extends State<HelpScreen> {
         : 'You are on the help screen';
 
     String voiceGuidanceText = ttsLanguage == 'ur-PK'
-        ? 'وائس گائیڈنس: یہ ایپ خود بخود ہر سیکشن پڑھے گی۔ کسی بھی سیکشن کو دوبارہ سننے کے لیے اس پر تھپتھپائیں۔'
+        ? 'وائس گائیڈنس: یہ ایپ خود بخود ہر سیکشن پڑھے گی۔'
         : 'Voice guidance: This app will automatically read each section. Tap any section to hear it again.';
 
     _sectionsText = [welcomeMessage];
-    _sectionsText.addAll(helpItems.map((e) => '${e['title']}: ${e['content']}').toList());
+    _sectionsText
+        .addAll(helpItems.map((e) => '${e['title']}: ${e['content']}').toList());
     _sectionsText.add(voiceGuidanceText);
   }
 
-  // --------------------------------------------------------------------------
-  // TTS Setup & Control
-  // --------------------------------------------------------------------------
   Future<void> _initTts() async {
     await _loadTtsSettings();
     _buildSectionsText();
@@ -108,11 +227,8 @@ class _HelpScreenState extends State<HelpScreen> {
       _ttsCompleter?.complete();
     });
 
-    if (ttsLanguage == 'ur-PK') {
-      await Future.delayed(const Duration(milliseconds: 1000));
-    } else {
-      await Future.delayed(const Duration(milliseconds: 800));
-    }
+    await Future.delayed(
+        Duration(milliseconds: ttsLanguage == 'ur-PK' ? 1000 : 800));
 
     if (_sectionsText.isNotEmpty && mounted) {
       _startReadingAll(isFirst: true);
@@ -143,10 +259,8 @@ class _HelpScreenState extends State<HelpScreen> {
 
     if (key?.currentContext == null) return;
 
-    final ScrollableState? scrollableState = Scrollable.maybeOf(key!.currentContext!);
-    if (scrollableState == null) return;
-
-    final RenderBox? renderBox = key.currentContext!.findRenderObject() as RenderBox?;
+    final RenderBox? renderBox =
+    key!.currentContext!.findRenderObject() as RenderBox?;
     if (renderBox == null) return;
 
     final position = renderBox.localToGlobal(Offset.zero);
@@ -158,7 +272,7 @@ class _HelpScreenState extends State<HelpScreen> {
     if (!visible) {
       await Scrollable.ensureVisible(
         key.currentContext!,
-        duration: Duration(milliseconds: 20),
+        duration: const Duration(milliseconds: 20),
         curve: Curves.easeInOut,
         alignment: 0.3,
       );
@@ -168,35 +282,29 @@ class _HelpScreenState extends State<HelpScreen> {
   int _estimateDurationMs(String text) {
     const int msPerChar = 100;
     int estimated = text.length * msPerChar;
-    if (ttsLanguage == 'ur-PK') {
-      return estimated.clamp(4000, 8000);
-    } else {
-      return estimated.clamp(450, 6500);
-    }
+    return ttsLanguage == 'ur-PK'
+        ? estimated.clamp(4000, 8000)
+        : estimated.clamp(450, 6500);
   }
 
   Future<void> _speakAndWait(String text) async {
     final settings = Provider.of<AppSettings>(context, listen: false);
-
     _ttsCompleter = Completer<void>();
     await settings.tts.speak(text);
-
     final estimatedDur = _estimateDurationMs(text);
-    final fallbackDuration = Duration(milliseconds: estimatedDur );
-
     try {
-      await _ttsCompleter!.future.timeout(fallbackDuration);
+      await _ttsCompleter!.future
+          .timeout(Duration(milliseconds: estimatedDur));
     } on TimeoutException {
-      debugPrint('Fallback timer used for: "$text" (${text.length} chars)');
+      debugPrint('Fallback timer used for: "$text"');
     } finally {
       _ttsCompleter = null;
     }
   }
 
-  Future<void> _startReadingAll({int startIndex = 0, bool isFirst = false}) async {
-    if (!isFirst) {
-      await _stopSpeaking();
-    }
+  Future<void> _startReadingAll(
+      {int startIndex = 0, bool isFirst = false}) async {
+    if (!isFirst) await _stopSpeaking();
     _autoMode = true;
     setState(() => _isSpeaking = true);
 
@@ -222,9 +330,7 @@ class _HelpScreenState extends State<HelpScreen> {
       await _speakAndWait(_sectionsText[sectionsIndex]);
     }
 
-    if (mounted) {
-      setState(() => _isSpeaking = false);
-    }
+    if (mounted) setState(() => _isSpeaking = false);
   }
 
   Future<void> _stopSpeaking() async {
@@ -232,36 +338,28 @@ class _HelpScreenState extends State<HelpScreen> {
     if (mounted) setState(() => _isSpeaking = false);
     final settings = Provider.of<AppSettings>(context, listen: false);
     await settings.tts.stop();
+    _ttsCompleter?.complete();
     _ttsCompleter = null;
   }
 
-  // --------------------------------------------------------------------------
-  // Lifecycle
-  // --------------------------------------------------------------------------
-  @override
-  void dispose() {
-    final settings = Provider.of<AppSettings>(context, listen: false);
-    settings.tts.stop();
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  // --------------------------------------------------------------------------
-  // UI BUILD
-  // --------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     final settings = Provider.of<AppSettings>(context);
     final strings = AppLocalizations.of(context);
     final isUrdu = ttsLanguage == 'ur-PK';
 
-    final bgColor = settings.highContrast ? Colors.black : const Color(0xFFF8FAFD);
-    final textColor = settings.highContrast ? Colors.white : const Color(0xFF1A237E);
-    final subtitleColor = settings.highContrast ? Colors.white70 : const Color(0xFF5C6BC0);
-    final headerBgColor = settings.highContrast ? const Color(0xFF1E1E1E) : Colors.white;
+    final bgColor =
+    settings.highContrast ? Colors.black : const Color(0xFFF8FAFD);
+    final textColor =
+    settings.highContrast ? Colors.white : const Color(0xFF1A237E);
+    final subtitleColor =
+    settings.highContrast ? Colors.white70 : const Color(0xFF5C6BC0);
+    final headerBgColor =
+    settings.highContrast ? const Color(0xFF1E1E1E) : Colors.white;
 
     return MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaleFactor: settings.largeText ? 1.5 : 1.0),
+      data: MediaQuery.of(context)
+          .copyWith(textScaleFactor: settings.largeText ? 1.5 : 1.0),
       child: Scaffold(
         backgroundColor: bgColor,
         body: SafeArea(
@@ -278,9 +376,9 @@ class _HelpScreenState extends State<HelpScreen> {
             ),
             child: Column(
               children: [
-                // ---------------------- HEADER ----------------------
                 Container(
-                  padding: const EdgeInsets.only(top: 20, left: 20, right: 20, bottom: 20),
+                  padding: const EdgeInsets.only(
+                      top: 20, left: 20, right: 20, bottom: 20),
                   decoration: BoxDecoration(
                     color: headerBgColor,
                     borderRadius: const BorderRadius.only(
@@ -301,7 +399,6 @@ class _HelpScreenState extends State<HelpScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          // Back arrow button with white circle background
                           Container(
                             width: 44,
                             height: 44,
@@ -317,24 +414,15 @@ class _HelpScreenState extends State<HelpScreen> {
                               ],
                             ),
                             child: IconButton(
-                              icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                                  color: Color(0xFF1A237E), size: 20),
-                              onPressed: () async {
-                                await _stopSpeaking();
-                                final settingsLocal =
-                                Provider.of<AppSettings>(context, listen: false);
-                                final message = widget.fromSettings
-                                    ? strings.translate('returning_to_settings')
-                                    : strings.translate('returning_home_screen');
-                                await settingsLocal.tts.speak(message);
-                                await Future.delayed(const Duration(seconds: 2));
-                                if (mounted) Navigator.pop(context);
-                              },
+                              icon: const Icon(
+                                  Icons.arrow_back_ios_new_rounded,
+                                  color: Color(0xFF1A237E),
+                                  size: 20),
+                              onPressed: _goBack,
                               padding: EdgeInsets.zero,
                               constraints: const BoxConstraints(),
                             ),
                           ),
-                          // Play/Stop button with white circle background
                           Container(
                             width: 44,
                             height: 44,
@@ -370,7 +458,6 @@ class _HelpScreenState extends State<HelpScreen> {
                         ],
                       ),
                       const SizedBox(height: 25),
-                      // Centered title (no icon)
                       _buildRtlText(
                         strings.translate('help_title'),
                         style: TextStyle(
@@ -383,7 +470,8 @@ class _HelpScreenState extends State<HelpScreen> {
                       ),
                       const SizedBox(height: 10),
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        padding:
+                        const EdgeInsets.symmetric(horizontal: 20),
                         child: _buildRtlText(
                           strings.translate('help_subtitle'),
                           style: TextStyle(
@@ -395,12 +483,27 @@ class _HelpScreenState extends State<HelpScreen> {
                           align: TextAlign.center,
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      // Voice hint — changes based on fromSettings and language
+                      Text(
+                        widget.fromSettings
+                            ? (isUrdu
+                            ? 'کہیں: "واپس" یا "سیٹنگز پر واپس"'
+                            : 'Say: "back" or "return to settings"')
+                            : (isUrdu
+                            ? 'کہیں: "واپس" یا "ہوم پر واپس"'
+                            : 'Say: "back" or "return to home"'),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: const Color(0xFF00E5FF).withOpacity(0.8),
+                          fontStyle: FontStyle.italic,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 20),
-
-                // ---------------------- LIST OF HELP CARDS + VOICE CARD ----------------------
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -424,25 +527,25 @@ class _HelpScreenState extends State<HelpScreen> {
                           );
                         }).toList(),
                         const SizedBox(height: 30),
-
-                        // Voice guidance note card
                         GestureDetector(
                           key: _voiceGuidanceKey,
-                          onTap: () {
-                            _readItem(helpItems.length);
-                          },
+                          onTap: () => _readItem(helpItems.length),
                           child: Container(
                             padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(
-                                colors: [Color(0xFF1A237E), Color(0xFF3949AB)],
+                                colors: [
+                                  Color(0xFF1A237E),
+                                  Color(0xFF3949AB)
+                                ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
                               borderRadius: BorderRadius.circular(20),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFF1A237E).withOpacity(0.3),
+                                  color: const Color(0xFF1A237E)
+                                      .withOpacity(0.3),
                                   blurRadius: 15,
                                   spreadRadius: 2,
                                   offset: const Offset(0, 4),
@@ -452,14 +555,18 @@ class _HelpScreenState extends State<HelpScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.start,
                               children: [
-                                if (!isUrdu) Icon(Icons.volume_up_rounded, color: Colors.white, size: 28),
+                                if (!isUrdu)
+                                  const Icon(Icons.volume_up_rounded,
+                                      color: Colors.white, size: 28),
                                 if (!isUrdu) const SizedBox(width: 16),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    crossAxisAlignment:
+                                    CrossAxisAlignment.stretch,
                                     children: [
                                       _buildRtlText(
-                                        strings.translate('voice_guidance_card'),
+                                        strings.translate(
+                                            'voice_guidance_card'),
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 18,
@@ -468,9 +575,11 @@ class _HelpScreenState extends State<HelpScreen> {
                                       ),
                                       const SizedBox(height: 4),
                                       _buildRtlText(
-                                        strings.translate('voice_guidance_card_text'),
+                                        strings.translate(
+                                            'voice_guidance_card_text'),
                                         style: TextStyle(
-                                          color: Colors.white.withOpacity(0.9),
+                                          color:
+                                          Colors.white.withOpacity(0.9),
                                           fontSize: 14,
                                           fontWeight: FontWeight.w400,
                                         ),
@@ -479,7 +588,9 @@ class _HelpScreenState extends State<HelpScreen> {
                                   ),
                                 ),
                                 if (isUrdu) const SizedBox(width: 16),
-                                if (isUrdu) Icon(Icons.volume_up_rounded, color: Colors.white, size: 28),
+                                if (isUrdu)
+                                  const Icon(Icons.volume_up_rounded,
+                                      color: Colors.white, size: 28),
                               ],
                             ),
                           ),
@@ -497,9 +608,6 @@ class _HelpScreenState extends State<HelpScreen> {
     );
   }
 
-  // --------------------------------------------------------------------------
-  // UI Helpers for Help Cards (unchanged)
-  // --------------------------------------------------------------------------
   Widget _buildHelpCard({
     required String title,
     required String content,
@@ -515,7 +623,9 @@ class _HelpScreenState extends State<HelpScreen> {
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
-              colors: gradient, begin: Alignment.topLeft, end: Alignment.bottomRight),
+              colors: gradient,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight),
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
@@ -533,7 +643,8 @@ class _HelpScreenState extends State<HelpScreen> {
               left: isUrdu ? 16 : null,
               top: 16,
               child: Opacity(
-                  opacity: 0.1, child: Icon(icon, size: 60, color: Colors.white)),
+                  opacity: 0.1,
+                  child: Icon(icon, size: 60, color: Colors.white)),
             ),
             Padding(
               padding: const EdgeInsets.all(20),
@@ -548,9 +659,12 @@ class _HelpScreenState extends State<HelpScreen> {
                         color: Colors.white.withOpacity(0.2),
                         shape: BoxShape.circle,
                         border: Border.all(
-                            color: Colors.white.withOpacity(0.3), width: 1.5),
+                            color: Colors.white.withOpacity(0.3),
+                            width: 1.5),
                       ),
-                      child: Center(child: Icon(icon, color: Colors.white, size: 24)),
+                      child: Center(
+                          child:
+                          Icon(icon, color: Colors.white, size: 24)),
                     ),
                     const SizedBox(width: 16),
                   ],
@@ -589,9 +703,12 @@ class _HelpScreenState extends State<HelpScreen> {
                         color: Colors.white.withOpacity(0.2),
                         shape: BoxShape.circle,
                         border: Border.all(
-                            color: Colors.white.withOpacity(0.3), width: 1.5),
+                            color: Colors.white.withOpacity(0.3),
+                            width: 1.5),
                       ),
-                      child: Center(child: Icon(icon, color: Colors.white, size: 24)),
+                      child: Center(
+                          child:
+                          Icon(icon, color: Colors.white, size: 24)),
                     ),
                   ],
                 ],

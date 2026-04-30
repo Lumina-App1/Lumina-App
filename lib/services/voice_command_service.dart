@@ -19,7 +19,9 @@ class VoiceCommandService {
   bool _isDestroyed = false;
   String _status = "Initializing...";
   Timer? _restartTimer;
-  Function(String)? _screenCommandHandler; // ADD: screen-specific command handler
+
+  // Stack-based handler — top of stack is always the active screen
+  final List<Function(String)> _handlerStack = [];
 
   Future<void> init(BuildContext context) async {
     _context = context;
@@ -46,14 +48,19 @@ class VoiceCommandService {
     print('🔄 Context updated');
   }
 
-  // ADD: register screen-specific commands
+  /// Push a screen-specific handler. Top of stack = active handler.
   void setScreenCommands(Function(String) handler) {
-    _screenCommandHandler = handler;
+    _handlerStack.remove(handler);
+    _handlerStack.add(handler);
+    print('📌 Handler pushed — stack depth: ${_handlerStack.length}');
   }
 
-  // ADD: clear screen-specific commands when leaving screen
+  /// Pop the screen handler when leaving the screen.
   void clearScreenCommands() {
-    _screenCommandHandler = null;
+    if (_handlerStack.isNotEmpty) {
+      _handlerStack.removeLast();
+    }
+    print('🗑️ Handler popped — stack depth: ${_handlerStack.length}');
   }
 
   Future<void> _initSpeech() async {
@@ -65,7 +72,6 @@ class VoiceCommandService {
         onStatus: (status) {
           print('📢 Speech status: $status');
           _status = status;
-
           if ((status == 'notListening' || status == 'done') &&
               !_isPaused &&
               !_isDestroyed &&
@@ -110,7 +116,8 @@ class VoiceCommandService {
 
   void _startListening() {
     if (_isListening || _isPaused || !_isAvailable || _isDestroyed) {
-      print('Cannot start: isListening=$_isListening, isPaused=$_isPaused, isAvailable=$_isAvailable, isDestroyed=$_isDestroyed');
+      print(
+          'Cannot start: isListening=$_isListening, isPaused=$_isPaused, isAvailable=$_isAvailable, isDestroyed=$_isDestroyed');
       return;
     }
 
@@ -120,7 +127,7 @@ class VoiceCommandService {
     _speech.listen(
       onResult: (result) {
         if (result.finalResult) {
-          String command = result.recognizedWords.trim();
+          final String command = result.recognizedWords.trim();
           if (command.isNotEmpty) {
             print('🎤 RECOGNIZED: "$command"');
             _processCommand(command.toLowerCase());
@@ -133,21 +140,21 @@ class VoiceCommandService {
       },
       listenFor: const Duration(seconds: 10),
       pauseFor: const Duration(seconds: 3),
-      partialResults: true,
+      partialResults: false,
       localeId: 'en_US',
       cancelOnError: false,
     );
   }
 
   void _processCommand(String command) {
-    // Screen-specific commands take priority over global navigation
-    if (_screenCommandHandler != null) {
+    // Top of stack = current screen handler — always wins
+    if (_handlerStack.isNotEmpty) {
       print('🎯 Routing to screen handler: "$command"');
-      _screenCommandHandler!(command);
+      _handlerStack.last(command);
       return;
     }
 
-    // Global navigation commands (home screen)
+    // Global fallback — only runs on Home screen (no handler registered)
     final navigatorState = navigatorKey.currentState;
     if (navigatorState == null) {
       print('❌ Navigator not ready');
@@ -184,7 +191,7 @@ class VoiceCommandService {
       } else if (command.contains('back')) {
         print('✅ MATCH: Back');
         if (navigatorState.canPop()) {
-          _speak('Going back');
+          _speak('Going back to settings');
           Future.delayed(const Duration(milliseconds: 300), () {
             navigatorKey.currentState?.pop();
           });

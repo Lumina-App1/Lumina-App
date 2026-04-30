@@ -38,7 +38,7 @@ class _TargetScreenState extends State<TargetScreen>
   Timer? _targetTimeout;
   DateTime? _lastSpokenTime;
 
-  final String _backendUrl = "http://192.168.1.4:5000/search";
+  final String _backendUrl = "http://10.233.20.154:5000/search";
 
   int _frameCounter = 0;
   // final int _processEveryNFrames = 25;

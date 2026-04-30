@@ -48,10 +48,12 @@ class _DetectionScreenState extends State<DetectionScreen> with RouteAware {
     if (route is PageRoute) {
       routeObserver.subscribe(this, route);
     }
-    _voiceService.updateContext(context);
-    _voiceService.setScreenCommands(_handleVoiceCommand);
-  }
 
+    if (ModalRoute.of(context)?.isCurrent == true) {
+      _voiceService.updateContext(context);
+      _voiceService.setScreenCommands(_handleVoiceCommand);
+    }
+  }
   @override
   void didPopNext() {
     _voiceService.updateContext(context);
