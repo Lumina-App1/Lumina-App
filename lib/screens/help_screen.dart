@@ -67,7 +67,7 @@ class _HelpScreenState extends State<HelpScreen> with RouteAware {
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
-    _voiceService.clearScreenCommands();
+    // DELETE THIS LINE: _voiceService.clearScreenCommands();
     final settings = Provider.of<AppSettings>(context, listen: false);
     settings.tts.stop();
     _scrollController.dispose();
@@ -123,7 +123,7 @@ class _HelpScreenState extends State<HelpScreen> with RouteAware {
     await _stopSpeaking();
     final settings = Provider.of<AppSettings>(context, listen: false);
     final strings = AppLocalizations.of(context);
-    final bool isUrdu = ttsLanguage == 'ur-PK';
+    final bool isUrdu = settings.language == 'Urdu';
 
     String message;
     if (widget.fromSettings) {
@@ -140,6 +140,7 @@ class _HelpScreenState extends State<HelpScreen> with RouteAware {
     await settings.tts.speak(message);
     await Future.delayed(Duration(milliseconds: isUrdu ? 2000 : 1800));
     if (mounted) Navigator.pop(context);
+    // Voice continues automatically
   }
 
   Widget _buildRtlText(String text,

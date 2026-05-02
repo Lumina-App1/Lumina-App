@@ -29,6 +29,18 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
     _initTts();
   }
 
+  // 1. Replace the _speak method:
+  Future<void> _speak(String message) async {
+    if (!_ttsReady) return;
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    await settings.tts.stop();
+    await Future.delayed(const Duration(milliseconds: 100));
+    await settings.tts.speak(message);
+    // NO pause/resume - mic stays active
+  }
+
+// 2. Replace didChangeDependencies:
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -37,20 +49,64 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
       routeObserver.subscribe(this, route);
     }
     if (ModalRoute.of(context)?.isCurrent == true) {
+      print('🔄 Settings: didChangeDependencies - registering handler');
       _voiceService.updateContext(context);
+      _voiceService.clearScreenCommands();
       _voiceService.setScreenCommands(_handleVoiceCommand);
+      _voiceService.resume();
     }
   }
 
   @override
   void didPopNext() {
+    print('🔄 Settings: didPopNext called - re-registering handler');
     _isNavigating = false;
-    _voiceService.updateContext(context);
-    _voiceService.setScreenCommands(_handleVoiceCommand);
-    _voiceService.resume();
-    Future.delayed(const Duration(milliseconds: 2800), () {
+
+    Future.delayed(const Duration(milliseconds: 200), () {  // ← delay beats dispose()
+      if (!mounted) return;
+      _voiceService.clearScreenCommands();
+      _voiceService.updateContext(context);
+      _voiceService.setScreenCommands(_handleVoiceCommand);
+      _voiceService.resume();
+    });
+
+    Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) _announceSettings();
     });
+  }
+
+
+// 4. Replace _goBack:
+  Future<void> _goBack() async {
+    if (_isNavigating) return;
+    _isNavigating = true;
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    final strings = AppLocalizations.of(context);
+    await settings.tts.stop();
+    await Future.delayed(const Duration(milliseconds: 100));
+    await settings.tts.speak(strings.translate('returning_home'));
+    final bool isUrdu = settings.language == 'Urdu';
+    await Future.delayed(Duration(milliseconds: isUrdu ? 1800 : 1500));
+    _isNavigating = false;
+    if (mounted) Navigator.pop(context);
+  }
+
+// 5. Replace _openPage:
+  Future<void> _openPage(Widget page, String message, FromPage from) async {
+    if (_isNavigating) return;
+    _isNavigating = true;
+
+    await _speak(message);
+    await Future.delayed(const Duration(milliseconds: 800));
+
+    if (!mounted) {
+      _isNavigating = false;
+      return;
+    }
+
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+
+    _isNavigating = false;
   }
 
   @override
@@ -321,13 +377,6 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
     });
   }
 
-  Future<void> _speak(String message) async {
-    if (!_ttsReady) return;
-    final settings = Provider.of<AppSettings>(context, listen: false);
-    await settings.tts.stop();
-    await Future.delayed(const Duration(milliseconds: 100));
-    await settings.tts.speak(message);
-  }
 
   Future<void> _announceSettings() async {
     if (!_ttsReady || !mounted) return;
@@ -344,38 +393,6 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
         message = strings.translate('settings_announce');
     }
     await _speak(message);
-  }
-
-  Future<void> _openPage(Widget page, String message, FromPage from) async {
-    if (_isNavigating) return;
-    _isNavigating = true;
-
-    await _speak(message);
-    await Future.delayed(const Duration(milliseconds: 800));
-
-    if (!mounted) {
-      _isNavigating = false;
-      return;
-    }
-
-    await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
-
-    // Safety fallback reset — didPopNext is the primary reset
-    _isNavigating = false;
-  }
-
-  Future<void> _goBack() async {
-    if (_isNavigating) return;
-    _isNavigating = true;
-    final settings = Provider.of<AppSettings>(context, listen: false);
-    final strings = AppLocalizations.of(context);
-    await settings.tts.stop();
-    await Future.delayed(const Duration(milliseconds: 100));
-    await settings.tts.speak(strings.translate('returning_home'));
-    final bool isUrdu = settings.language == 'Urdu';
-    await Future.delayed(Duration(milliseconds: isUrdu ? 1800 : 1500));
-    _isNavigating = false;
-    if (mounted) Navigator.pop(context);
   }
 
   @override

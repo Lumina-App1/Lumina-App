@@ -72,7 +72,7 @@ class _AboutScreenState extends State<AboutScreen> with RouteAware {
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
-    _voiceService.clearScreenCommands();
+    // DELETE THIS LINE: _voiceService.clearScreenCommands();
     final settings = Provider.of<AppSettings>(context, listen: false);
     settings.tts.stop();
     _scrollController.dispose();
@@ -103,7 +103,6 @@ class _AboutScreenState extends State<AboutScreen> with RouteAware {
   }
 
   Future<void> _goBack() async {
-    // Stop any ongoing reading first without causing conflicts
     _autoMode = false;
     _readingStopped = true;
     _ttsCompleter?.complete();
@@ -113,7 +112,6 @@ class _AboutScreenState extends State<AboutScreen> with RouteAware {
     await settings.tts.stop();
     if (mounted) setState(() => _isSpeaking = false);
 
-    // Small pause then say the full goodbye line once — no repetition
     await Future.delayed(const Duration(milliseconds: 200));
     final bool isUrdu = settings.language == 'Urdu';
     final String goodbyeMsg = isUrdu
@@ -121,9 +119,9 @@ class _AboutScreenState extends State<AboutScreen> with RouteAware {
         : 'Returning to Settings Screen';
     await settings.tts.speak(goodbyeMsg);
 
-    // Wait for TTS to finish before popping
     await Future.delayed(Duration(milliseconds: isUrdu ? 2000 : 1800));
     if (mounted) Navigator.pop(context);
+    // Voice continues automatically - no pause/resume needed
   }
 
   void _initializeData() {

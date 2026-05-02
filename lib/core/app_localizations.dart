@@ -28,9 +28,9 @@ class AppLocalizations {
     'welcome_splash': 'Welcome to Lumina App. Seeing Beyond Vision',
 
     // Home screen
-    'welcome_home': 'Welcome to home. How can I help you? For object detection, select object detection. To search something specific, select target search. To change settings, select settings.',
+    'welcome_home': 'Welcome to home. How can I assist you? For object detection, select object detection. To search something specific, select target search. To change settings, select settings.',
     'home_title': 'HOME',
-    'home_subtitle': 'How can I help you today?',
+    'home_subtitle': 'How can I assist you today?',
     'object_detection': 'Object Detection',
     'object_detection_sub': 'Identify objects around you',
     'target_search': 'Target Search',

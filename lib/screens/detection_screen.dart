@@ -54,6 +54,7 @@ class _DetectionScreenState extends State<DetectionScreen> with RouteAware {
       _voiceService.setScreenCommands(_handleVoiceCommand);
     }
   }
+
   @override
   void didPopNext() {
     _voiceService.updateContext(context);
@@ -73,11 +74,57 @@ class _DetectionScreenState extends State<DetectionScreen> with RouteAware {
   }
 
   void _handleVoiceCommand(String command) {
-    if (command.contains('pause') || command.contains('stop detection')) {
-      if (!isPaused) _pauseResumeCamera();
-    } else if (command.contains('resume') || command.contains('continue')) {
-      if (isPaused) _pauseResumeCamera();
-    } else if (command.contains('stop') || command.contains('back') || command.contains('home')) {
+    print('🔍 Detection command received: "$command"');
+
+    // Urdu and English pause commands
+    if (command.contains('pause') ||
+        command.contains('rok') ||
+        command.contains('ruko') ||
+        command.contains('ruk jao') ||
+        command.contains('rok doo') ||
+        command.contains('detection rok') ||
+        command.contains('توقف') ||
+        command.contains('روکو') ||
+        command.contains('رک جاؤ') ||
+        command.contains('رک دو')) {
+      if (!isPaused) {
+        print('✅ PAUSE command detected');
+        _pauseResumeCamera();
+      }
+    }
+    // Urdu and English resume commands
+    else if (command.contains('resume') ||
+        command.contains('continue') ||
+        command.contains('chala doo') ||
+        command.contains('shuru kar doo') ||
+        command.contains('dobara shuru') ||
+        command.contains('detection resume') ||
+        command.contains('چلا دو') ||
+        command.contains('شروع کرو') ||
+        command.contains('دوبارہ شروع کرو')) {
+      if (isPaused) {
+        print('✅ RESUME command detected');
+        _pauseResumeCamera();
+      }
+    }
+    // Urdu and English stop commands
+    else if (command.contains('stop detection') ||
+        command.contains('stop') ||
+        command.contains('band kar doo') ||
+        command.contains('khatam kar doo') ||
+        command.contains('detection band') ||
+        command.contains('detection khatam') ||
+        command.contains('بند کرو') ||
+        command.contains('ختم کرو')) {
+      print('✅ STOP command detected');
+      _stopCamera();
+    }
+    // Back/Home commands
+    else if (command.contains('back') ||
+        command.contains('home') ||
+        command.contains('واپس') ||
+        command.contains('گھر')) {
+      print('✅ BACK/HOME command detected');
       _stopCamera();
     }
   }
@@ -257,6 +304,7 @@ class _DetectionScreenState extends State<DetectionScreen> with RouteAware {
 
   Widget _buildBody(AppSettings settings) {
     final strings = AppLocalizations.of(context);
+    final bool isUrdu = settings.language == 'Urdu';
 
     if (_controller == null || !_controller!.value.isInitialized) {
       return Scaffold(
@@ -382,7 +430,9 @@ class _DetectionScreenState extends State<DetectionScreen> with RouteAware {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Say: "pause", "resume", "stop", or "back"',
+                  isUrdu
+                      ? 'کہیں: "روکو"، "چلا دو"، "بند کرو"'
+                      : 'Say: "pause", "resume", "stop"',
                   style: TextStyle(
                     fontSize: 11,
                     color: Colors.greenAccent.withOpacity(0.7),

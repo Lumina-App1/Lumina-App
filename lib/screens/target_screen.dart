@@ -31,14 +31,16 @@ class _TargetScreenState extends State<TargetScreen>
   bool _isProcessing = false;
 
   String _currentTarget = "";
+  bool _targetFound = false;
 
   // SINGLE recognizer mode state
   bool _waitingForTarget = false;
   String _heardText = "";
   Timer? _targetTimeout;
   DateTime? _lastSpokenTime;
+  bool _isSpeaking = false;
 
-  final String _backendUrl = "http://10.233.20.154:5000/search";
+  final String _backendUrl = "http://192.168.1.5:5000/search";
 
   int _frameCounter = 0;
   // final int _processEveryNFrames = 25;
@@ -54,7 +56,495 @@ class _TargetScreenState extends State<TargetScreen>
 
     _initializeCamera();
   }
+  bool _lastCommandWasUrdu = false;
+// Detect if input is Urdu
+  bool _isUrduText(String text) {
+    final urduRegex = RegExp(r'[\u0600-\u06FF]');
+    return urduRegex.hasMatch(text);
+  }
 
+
+// Urdu + Roman Urdu → English mapping
+  String _mapToEnglish(String input) {
+    final text = input.toLowerCase().trim();
+
+    final map = {
+      // PERSON
+      "آدمی": "person",
+      "انسان": "person",
+      "بندہ": "person",
+      "عورت": "person",
+      "لڑکا": "person",
+      "لڑکی": "person",
+      "admi": "person",
+      "insaan": "person",
+      "banda": "person",
+
+// BICYCLE
+      "سائیکل": "bicycle",
+      "بائیسکل": "bicycle",
+      "cycle": "bicycle",
+      "bicycle": "bicycle",
+      "saikal": "bicycle",
+
+// CAR
+      "گاڑی": "car",
+      "کار": "car",
+      "موٹر": "car",
+      "gaari": "car",
+      "car": "car",
+
+// MOTORCYCLE
+      "موٹر سائیکل": "motorcycle",
+      "بائیک": "motorcycle",
+      "motor cycle": "motorcycle",
+      "bike": "motorcycle",
+      "baik": "motorcycle",
+
+// AIRPLANE
+      "ہوائی جہاز": "airplane",
+      "جہاز": "airplane",
+      "hawai jahaz": "airplane",
+      "airplane": "airplane",
+      "plane": "airplane",
+
+// BUS
+      "بس": "bus",
+      "bus": "bus",
+
+// TRAIN
+      "ریل گاڑی": "train",
+      "ریل": "train",
+      "ٹرین": "train",
+      "train": "train",
+      "rail": "train",
+
+// TRUCK
+      "ٹرک": "truck",
+      "truck": "truck",
+      "trak": "truck",
+
+// BOAT
+      "کشتی": "boat",
+      "ناؤ": "boat",
+      "boat": "boat",
+      "kashti": "boat",
+
+// TRAFFIC LIGHT
+      "ٹریفک لائٹ": "traffic light",
+      "سگنل": "traffic light",
+      "traffic light": "traffic light",
+      "signal": "traffic light",
+
+// FIRE HYDRANT
+      "فائر ہائیڈرنٹ": "fire hydrant",
+      "fire hydrant": "fire hydrant",
+
+// STOP SIGN
+      "اسٹاپ سائن": "stop sign",
+      "stop sign": "stop sign",
+      "stop": "stop sign",
+
+// PARKING METER
+      "پارکنگ میٹر": "parking meter",
+      "parking meter": "parking meter",
+
+// BENCH
+      "بینچ": "bench",
+      "بنچ": "bench",
+      "bench": "bench",
+      "baich": "bench",
+
+// BIRD
+      "پرندہ": "bird",
+      "چڑیا": "bird",
+      "پرند": "bird",
+      "bird": "bird",
+      "parinda": "bird",
+      "chirya": "bird",
+
+// CAT
+      "بلی": "cat",
+      "بلا": "cat",
+      "cat": "cat",
+      "billi": "cat",
+
+// DOG
+      "کتا": "dog",
+      "کتے": "dog",
+      "dog": "dog",
+      "kuta": "dog",
+
+// HORSE
+      "گھوڑا": "horse",
+      "گھوڑے": "horse",
+      "horse": "horse",
+      "ghora": "horse",
+
+// SHEEP
+      "بھیڑ": "sheep",
+      "دنبہ": "sheep",
+      "sheep": "sheep",
+      "bher": "sheep",
+
+// COW
+      "گائے": "cow",
+      "بھینس": "cow",
+      "cow": "cow",
+      "gaay": "cow",
+
+// ELEPHANT
+      "ہاتھی": "elephant",
+      "elephant": "elephant",
+      "haathi": "elephant",
+
+// BEAR
+      "ریچھ": "bear",
+      "bear": "bear",
+      "reech": "bear",
+
+// ZEBRA
+      "زیبرا": "zebra",
+      "zebra": "zebra",
+
+// GIRAFFE
+      "زرافہ": "giraffe",
+      "giraffe": "giraffe",
+      "zaraafa": "giraffe",
+
+// BACKPACK
+      "بیگ": "backpack",
+      "بستہ": "backpack",
+      "تھیلا": "backpack",
+      "backpack": "backpack",
+      "bag": "backpack",
+      "basta": "backpack",
+
+// UMBRELLA
+      "چھتری": "umbrella",
+      "umbrella": "umbrella",
+      "chhatri": "umbrella",
+
+// HANDBAG
+      "ہینڈ بیگ": "handbag",
+      "پرس": "handbag",
+      "handbag": "handbag",
+      "purse": "handbag",
+      "pars": "handbag",
+
+// TIE
+      "ٹائی": "tie",
+      "tie": "tie",
+
+// SUITCASE
+      "سوٹ کیس": "suitcase",
+      "اٹیچی": "suitcase",
+      "suitcase": "suitcase",
+      "attaché": "suitcase",
+      "atichi": "suitcase",
+
+// FRISBEE
+      "فریزبی": "frisbee",
+      "frisbee": "frisbee",
+
+// SKIS
+      "اسکی": "skis",
+      "skis": "skis",
+      "ski": "skis",
+
+// SNOWBOARD
+      "اسنو بورڈ": "snowboard",
+      "snowboard": "snowboard",
+
+// SPORTS BALL
+      "گیند": "sports ball",
+      "بال": "sports ball",
+      "sports ball": "sports ball",
+      "ball": "sports ball",
+      "gaind": "sports ball",
+
+// KITE
+      "پتنگ": "kite",
+      "گڈی": "kite",
+      "kite": "kite",
+      "patang": "kite",
+
+// BASEBALL BAT
+      "بیس بال بیٹ": "baseball bat",
+      "بیٹ": "baseball bat",
+      "baseball bat": "baseball bat",
+      "bat": "baseball bat",
+
+// BASEBALL GLOVE
+      "بیس بال دستانہ": "baseball glove",
+      "baseball glove": "baseball glove",
+      "glove": "baseball glove",
+
+// SKATEBOARD
+      "اسکیٹ بورڈ": "skateboard",
+      "skateboard": "skateboard",
+
+// SURFBOARD
+      "سرف بورڈ": "surfboard",
+      "surfboard": "surfboard",
+
+// TENNIS RACKET
+      "ٹینس ریکٹ": "tennis racket",
+      "ریکٹ": "tennis racket",
+      "tennis racket": "tennis racket",
+      "racket": "tennis racket",
+
+// BOTTLE
+      "بوتل": "bottle",
+      "پانی کی بوتل": "bottle",
+      "bottle": "bottle",
+      "paani ki botal": "bottle",
+      "botal": "bottle",
+
+// WINE GLASS
+      "شراب کا گلاس": "wine glass",
+      "wine glass": "wine glass",
+
+// CUP
+      "کپ": "cup",
+      "گلاس": "cup",
+      "پیالی": "cup",
+      "cup": "cup",
+      "glass": "cup",
+      "kap": "cup",
+
+// FORK
+      "کانٹا": "fork",
+      "fork": "fork",
+      "kanta": "fork",
+
+// KNIFE
+      "چھری": "knife",
+      "چاقو": "knife",
+      "knife": "knife",
+      "churi": "knife",
+      "chaku": "knife",
+
+// SPOON
+      "چمچ": "spoon",
+      "spoon": "spoon",
+      "chamach": "spoon",
+
+// BOWL
+      "پیالہ": "bowl",
+      "کٹورا": "bowl",
+      "bowl": "bowl",
+      "pyala": "bowl",
+      "katora": "bowl",
+
+// BANANA
+      "کیلا": "banana",
+      "کیلے": "banana",
+      "banana": "banana",
+      "kela": "banana",
+
+// APPLE
+      "سیب": "apple",
+      "apple": "apple",
+      "saib": "apple",
+
+// SANDWICH
+      "سینڈوچ": "sandwich",
+      "sandwich": "sandwich",
+
+// ORANGE
+      "سنترہ": "orange",
+      "مالٹا": "orange",
+      "orange": "orange",
+      "santra": "orange",
+      "malta": "orange",
+
+// BROCCOLI
+      "بروکلی": "broccoli",
+      "broccoli": "broccoli",
+
+// CARROT
+      "گاجر": "carrot",
+      "carrot": "carrot",
+      "gajar": "carrot",
+
+// HOT DOG
+      "ہاٹ ڈاگ": "hot dog",
+      "hot dog": "hot dog",
+      "hotdog": "hot dog",
+
+// PIZZA
+      "پیزا": "pizza",
+      "pizza": "pizza",
+
+// DONUT
+      "ڈونٹ": "donut",
+      "donut": "donut",
+      "doughnut": "donut",
+
+// CAKE
+      "کیک": "cake",
+      "cake": "cake",
+
+// CHAIR
+      "کرسی": "chair",
+      "chair": "chair",
+      "kursi": "chair",
+
+// COUCH
+      "صوفہ": "couch",
+      "سوفہ": "couch",
+      "couch": "couch",
+      "sofa": "couch",
+      "sopha": "couch",
+
+// POTTED PLANT
+      "گملا": "potted plant",
+      "پودا": "potted plant",
+      "potted plant": "potted plant",
+      "plant": "potted plant",
+      "gamla": "potted plant",
+
+// BED
+      "بستر": "bed",
+      "چارپائی": "bed",
+      "پلنگ": "bed",
+      "bed": "bed",
+      "bistar": "bed",
+      "charpai": "bed",
+
+// DINING TABLE
+      "میز": "dining table",
+      "ٹیبل": "dining table",
+      "dining table": "dining table",
+      "table": "dining table",
+      "maiz": "dining table",
+
+// TOILET
+      "ٹوائلٹ": "toilet",
+      "بیت الخلا": "toilet",
+      "toilet": "toilet",
+      "bait ul khala": "toilet",
+
+// TV
+      "ٹی وی": "tv",
+      "ٹیلی ویژن": "tv",
+      "tv": "tv",
+      "television": "tv",
+      "tivi": "tv",
+
+// LAPTOP
+      "لیپ ٹاپ": "laptop",
+      "کمپیوٹر": "laptop",
+      "لیپٹاپ": "laptop",
+      "laptop": "laptop",
+      "computer": "laptop",
+      "leaptop": "laptop",
+
+// MOUSE
+      "ماؤس": "mouse",
+      "mouse": "mouse",
+
+// REMOTE
+      "ریموٹ": "remote",
+      "ریموٹ کنٹرول": "remote",
+      "remote": "remote",
+      "remote control": "remote",
+
+// KEYBOARD
+      "کی بورڈ": "keyboard",
+      "keyboard": "keyboard",
+
+// CELL PHONE
+      "موبائل": "cell phone",
+      "فون": "cell phone",
+      "موبائل فون": "cell phone",
+      "cell phone": "cell phone",
+      "mobile": "cell phone",
+      "phone": "cell phone",
+      "mobile phone": "cell phone",
+
+// MICROWAVE
+      "مائیکرو ویو": "microwave",
+      "microwave": "microwave",
+
+// OVEN
+      "تندور": "oven",
+      "اوون": "oven",
+      "oven": "oven",
+      "tandoor": "oven",
+
+// TOASTER
+      "ٹوسٹر": "toaster",
+      "toaster": "toaster",
+
+// SINK
+      "سنک": "sink",
+      "واش بیسن": "sink",
+      "sink": "sink",
+      "wash basin": "sink",
+      "basin": "sink",
+
+// REFRIGERATOR
+      "فریج": "refrigerator",
+      "ریفریجریٹر": "refrigerator",
+      "refrigerator": "refrigerator",
+      "fridge": "refrigerator",
+      "farej": "refrigerator",
+
+// BOOK
+      "کتاب": "book",
+      "کتابیں": "book",
+      "book": "book",
+      "kitab": "book",
+
+// CLOCK
+      "گھڑی": "clock",
+      "دیواری گھڑی": "clock",
+      "clock": "clock",
+      "ghari": "clock",
+      "deewari ghari": "clock",
+
+// VASE
+      "گلدان": "vase",
+      "vase": "vase",
+      "guldan": "vase",
+
+// SCISSORS
+      "قینچی": "scissors",
+      "scissors": "scissors",
+      "qaichi": "scissors",
+
+// TEDDY BEAR
+      "ٹیڈی بیئر": "teddy bear",
+      "کھلونا": "teddy bear",
+      "teddy bear": "teddy bear",
+      "teddy": "teddy bear",
+      "khilona": "teddy bear",
+
+// HAIR DRIER
+      "ہیئر ڈرائر": "hair drier",
+      "hair drier": "hair drier",
+      "hair dryer": "hair drier",
+      "dryer": "hair drier",
+
+// TOOTHBRUSH
+      "ٹوتھ برش": "toothbrush",
+      "برش": "toothbrush",
+      "toothbrush": "toothbrush",
+      "brush": "toothbrush",
+      "barash": "toothbrush",
+    };
+    for (var key in map.keys) {
+      if (text.contains(key)) {
+        return map[key]!;
+      }
+    }
+    // return text;
+    // fallback: return last meaningful word
+    List<String> words = text.split(" ").where((w) => w.isNotEmpty).toList();
+    return words.isNotEmpty ? words.last : text;
+  }
 
   @override
   void didChangeDependencies() {
@@ -132,48 +622,82 @@ class _TargetScreenState extends State<TargetScreen>
 
 
   // Future<void> _speak(String text) async {
-  //
   //   try {
-  //     final settings =
-  //     Provider.of<AppSettings>(
+  //     if (text.trim().isEmpty) return;
+  //
+  //     final settings = Provider.of<AppSettings>(
   //       context,
   //       listen: false,
   //     );
   //
+  //     // 🟢 SET LANGUAGE BEFORE SPEAKING
+  //     if (_lastCommandWasUrdu || _isUrduMode()) {
+  //       await settings.tts.setLanguage("ur-PK"); // Urdu
+  //     } else {
+  //       await settings.tts.setLanguage("en-US"); // English
+  //     }
+  //
+  //     print("🔊 Speaking: $text");
+  //
+  //     _voiceService.pause();
+  //
   //     await settings.tts.stop();
   //     await settings.tts.speak(text);
-  //   }
-  //   catch (e) {
+  //
+  //     await Future.delayed(Duration(seconds: 4));
+  //
+  //   } catch (e) {
+  //     print("TTS ERROR:");
   //     print(e);
+  //   } finally {
+  //     _voiceService.resume();
   //   }
   // }
-  Future<void> _speak(String text) async {
-    try {
-      if (text.trim().isEmpty) return;
 
-      final settings = Provider.of<AppSettings>(
-        context,
-        listen: false,
-      );
+  Future<void> _speak(String text) async {
+    if (text.trim().isEmpty) return;
+
+    // 🟢 Wait if already speaking (prevents overlap)
+    while (_isSpeaking) {
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+
+    _isSpeaking = true;
+
+    try {
+      final settings = Provider.of<AppSettings>(context, listen: false);
+
+      // 🟢 Set language
+      if (_lastCommandWasUrdu || _isUrduMode()) {
+        await settings.tts.setLanguage("ur-PK");
+      } else {
+        await settings.tts.setLanguage("en-US");
+      }
 
       print("🔊 Speaking: $text");
 
-      // 🔴 STOP MIC BEFORE SPEAKING
       _voiceService.pause();
 
-      await settings.tts.stop();
+      // ❌ REMOVED: await settings.tts.stop();
+
       await settings.tts.speak(text);
 
-      // Wait until speech completes (important)
-      await Future.delayed(Duration(seconds: 2));
+      // ✅ REAL COMPLETION WAIT (NO FAKE DELAY)
+      await settings.tts.awaitSpeakCompletion(true);
 
     } catch (e) {
-      print("TTS ERROR:");
-      print(e);
+      print("TTS ERROR: $e");
     } finally {
-      // 🟢 RESUME MIC AFTER SPEAKING
+      _isSpeaking = false;
       _voiceService.resume();
     }
+  }
+
+  Future<void> _interruptAndSpeak(String text) async {
+    final settings = Provider.of<AppSettings>(context, listen: false);
+
+    await settings.tts.stop(); // ONLY here we force stop
+    await _speak(text);
   }
 
 
@@ -189,6 +713,31 @@ class _TargetScreenState extends State<TargetScreen>
   }
 
 
+  bool _isRomanUrdu(String text) {
+    text = text.toLowerCase();
+
+    List<String> romanWords = [
+      "dhundo",
+      "dhoondo",
+      "dhundho",
+      "talash",
+      "karo",
+      "admi",
+      "insaan",
+      "gaari",
+      "kursi",
+      "botal",
+      "paani",
+      "ghari",
+      "kitaab",
+      "banda",
+      "gaari", "bike", "botal", "paani",
+      "kursi", "kitaab", "ghari",
+      "pankha", "chaku", "chamach"
+    ];
+
+    return romanWords.any((word) => text.contains(word));
+  }
 ////////////////////////////////////////////////////////
 // SINGLE RECOGNIZER MODE SWITCH
 ////////////////////////////////////////////////////////
@@ -212,15 +761,84 @@ class _TargetScreenState extends State<TargetScreen>
 
     if (_waitingForTarget) {
 
-      if (command.isEmpty) {
+      // If it's actually a command → handle it normally
+      if (_matchesAny(command, [
+        // English
+        'stop','back','home',
+        'pause','resume',
+        'reset','continue',
+
+        // Urdu
+        'اسٹاپ','واپس','پاز','ریزیوم',
+        'ختم کر دو',
+        'روکو',
+        'رک جاؤ',
+        'ٹھہرو',
+        'وقفہ دو',
+        'عارضی بند کرو',
+        'چلاؤ',
+        'جاری کرو',
+        'دوبارہ شروع کرو',
+
+        'ہدف سیٹ کرو',
+        'ہدف بتاؤ',
+        'نیا ہدف',
+        'ہدف بدل دو',
+        'دوسرا ہدف',
+        'ری سیٹ کرو',
+        'دوبارہ شروع کرو',
+        'پھر سے کرو',
+
+        // Roman Urdu
+        'stop','back','home',
+        'pause','resume',
+        'reset','continue',
+
+        'stop','wapas','pause','resume',
+        'khatam karo',
+        'roko',
+        'ruk jao',
+        'rok do'
+            'thehro',
+        'waqfa do',
+        'aarzi band karo',
+        'chalao',
+        'jaari karo',
+        'dobara shuru karo',
+
+        'hadaf set karo',
+        'hadaf batao',
+        'naya hadaf',
+        'hadaf badal do',
+        'dosra hadaf',
+        'reset karo',
+        'dobara shuru karo',
+        'phir se karo'
+      ])) {
+        _waitingForTarget = false;
+        _handleVoiceCommand(command);
         return;
       }
 
-      String target = _cleanTarget(command);
+      if (command.isEmpty) return;
 
-      if (target.isEmpty) {
-        return;
-      }
+      // String target = _cleanTarget(command);
+      String rawTarget = _cleanTarget(command);
+
+      if (rawTarget.isEmpty) return;
+
+// Detect Urdu or Roman Urdu
+      _lastCommandWasUrdu =
+          _isUrduText(command) ||
+              _isRomanUrdu(command) ||
+              _isUrduMode();
+
+// Convert to English for backend
+//       String target = _mapToEnglish(rawTarget);
+      String target = _lastCommandWasUrdu
+          ? _mapToEnglish(rawTarget)
+          : rawTarget;
+      if (target.isEmpty) return;
 
       _targetTimeout?.cancel();
 
@@ -228,17 +846,22 @@ class _TargetScreenState extends State<TargetScreen>
         _waitingForTarget = false;
         _heardText = target;
         _currentTarget = target;
+        _targetFound = false;
       });
+
+      //
+      String spokenTarget = _lastCommandWasUrdu
+          ? _translateToUrdu(target)
+          : target;
 
       _speak(
           _isUrduMode()
-              ? "$target تلاش کر رہا ہوں"
-              : "Searching for $target"
+              ? "$spokenTarget تلاش کر رہا ہوں"
+              : "Searching for $spokenTarget"
       );
 
       return;
     }
-
 
 ////////////////////////
 // COMMAND MODE
@@ -251,7 +874,14 @@ class _TargetScreenState extends State<TargetScreen>
           'back',
           'home',
           'اسٹاپ',
-          'واپس'
+          'واپس',
+          'ختم کر دو',
+          // Roman Urdu
+          'band',
+
+          'stop',
+          'wapas',
+          'khatam karo'
         ]
     )) {
       _stopCamera();
@@ -264,7 +894,20 @@ class _TargetScreenState extends State<TargetScreen>
         [
           'pause',
           'پاز',
-          'روکو'
+          'روکو',
+          'رک جاؤ',
+          'ٹھہرو',
+          'وقفہ دو',
+          'عارضی بند کرو',
+
+          'pause',
+          'pause',
+          'roko',
+          'ruk jao',
+          'rok do'
+              'thehro',
+          'waqfa do',
+          'aarzi band karo'
         ]
     )) {
       if (!isPaused) {
@@ -279,7 +922,14 @@ class _TargetScreenState extends State<TargetScreen>
         [
           'resume',
           'continue',
-          'ریزیوم'
+          'ریزیوم',
+          'چلاؤ',
+          'جاری کرو',
+          'دوبارہ شروع کرو',
+          'chalao',
+          'jari karo',
+          'dobara shuru karo'
+
         ]
     )) {
       if (isPaused) {
@@ -292,9 +942,27 @@ class _TargetScreenState extends State<TargetScreen>
     if (_matchesAny(
         command,
         [
+          'set target',
           'reset',
           'change target',
-          'new target'
+          'new target',
+          'ہدف سیٹ کرو',
+          'ہدف بتاؤ',
+          'نیا ہدف',
+          'ہدف بدل دو',
+          'دوسرا ہدف',
+          'ری سیٹ کرو',
+          'دوبارہ شروع کرو',
+          'پھر سے کرو',
+
+          'hadaf set karo',
+          'hadaf batao',
+          'naya hadaf',
+          'hadaf badal do',
+          'dosra hadaf',
+          'reset karo',
+          'dobara shuru karo',
+          'phir se karo'
         ]
     )) {
       _resetSearch();
@@ -302,101 +970,47 @@ class _TargetScreenState extends State<TargetScreen>
     }
 
 
-    if (_matchesAny(
-        command,
-        [
-          'set target',
-          'find',
-          'search',
-          'ہدف',
-          'فائنڈ'
-        ]
-    )) {
-      _listenForTargetObject();
+    if (_matchesAny(command, [
+      'find',
+      'search',
+
+      // Urdu
+      'ڈھونڈو ',
+      'تلاش کرو ',
+      'تلاش ',
+      'ڈھونڈنا ',
+
+      // Roman Urdu
+      'dhundo',
+      'dhoondo',
+      'talash karo',
+      'talash',
+    ])) {
+
+      //  Prevent restarting listening if already in listening mode
+      if (!_waitingForTarget) {
+        _listenForTargetObject();
+      }
+
       return;
     }
   }
 
 
-  // String _cleanTarget(
-  //     String raw,
-  //     ) {
-  //
-  //   String text =
-  //   raw.toLowerCase().trim();
-  //
-  //   final prefixes = [
-  //     'find ',
-  //     'search for ',
-  //     'look for ',
-  //     'detect ',
-  //     'ڈھونڈو ',
-  //     'فائنڈ '
-  //   ];
-  //
-  //   for (final p in prefixes) {
-  //     if (text.startsWith(p)) {
-  //       text = text.substring(
-  //           p.length
-  //       ).trim();
-  //       break;
-  //     }
-  //   }
-  //
-  //   return text;
-  // }
-
-  // String _cleanTarget(String raw){
-  //
-  //   String text =
-  //   raw.toLowerCase().trim();
-  //
-  //   final prefixes=[
-  //     'find ',
-  //     'search ',
-  //     'search for ',
-  //     'look for ',
-  //     'detect ',
-  //     'find my ',
-  //     'ڈھونڈو ',
-  //     'فائنڈ '
-  //   ];
-  //
-  //   for(final p in prefixes){
-  //     if(text.startsWith(p)){
-  //       text=text.substring(
-  //           p.length
-  //       ).trim();
-  //       break;
-  //     }
-  //   }
-  //
-  //   return text;
-  // }
-
   String _cleanTarget(String raw) {
     String text = raw.toLowerCase().trim();
 
-    final prefixes = [
-      'say what to find ',
-      'find ',
-      'search for ',
-      'search ',
-      'look for ',
-      'detect ',
-      'find my ',
-      'ڈھونڈو ',
-      'فائنڈ '
-    ];
+    // Remove common English filler words
+    text = text.replaceAll(RegExp(
+        r'\b(find|search|look|detect|for|please|a|an|the|my)\b'),
+        '');
 
-    for (final p in prefixes) {
-      if (text.startsWith(p)) {
-        text = text.substring(p.length).trim();
-        break;
-      }
-    }
+    // Urdu / Roman Urdu cleanup (keep your existing behavior)
+    text = text.replaceAll(RegExp(
+        r'\b(dhundo|dhoondo|dhundho|talash|karo)\b'),
+        '');
 
-    return text;
+    return text.trim();
   }
 
   void _listenForTargetObject() {
@@ -443,6 +1057,170 @@ class _TargetScreenState extends State<TargetScreen>
               }
             }
         );
+  }
+
+  String _translateToUrdu(String text) {
+    String result = text.toLowerCase();
+
+    final map = {
+      "person": "آدمی",
+      "laptop": "لیپ ٹاپ",
+      "cell phone": "موبائل",
+      "bottle": "بوتل",
+      "cup": "کپ",
+      "fan": "پنکھا",
+
+      "bicycle": "سائیکل",
+      "car": "گاڑی",
+      "motorcycle": "موٹر سائیکل",
+      "airplane": "ہوائی جہاز",
+      "bus": "بس",
+      "train": "ٹرین",
+      "truck": "ٹرک",
+      "boat": "کشتی",
+
+
+      "traffic light": "ٹریفک لائٹ",
+      "fire hydrant": "فائر ہائیڈرنٹ",
+      "stop sign": "اسٹاپ سائن",
+      "parking meter": "پارکنگ میٹر",
+      "bench": "بینچ",
+
+      "bird": "پرندہ",
+      "cat": "بلی",
+      "dog": "کتا",
+      "horse": "گھوڑا",
+      "sheep": "بھیڑ",
+      "cow": "گائے",
+      "elephant": "ہاتھی",
+      "bear": "ریچھ",
+      "zebra": "زیبرا",
+      "giraffe": "زرافہ",
+
+      // ACCESSORIES
+      "backpack": "بیگ",
+      "umbrella": "چھتری",
+      "handbag": "ہینڈ بیگ",
+      "tie": "ٹائی",
+      "suitcase": "سوٹ کیس",
+
+      // SPORTS
+      "frisbee": "فریزبی",
+      "skis": "اسکی",
+      "snowboard": "اسنو بورڈ",
+      "sports ball": "گیند",
+      "kite": "پتنگ",
+      "baseball bat": "بیٹ",
+      "baseball glove": "دستانہ",
+      "skateboard": "اسکیٹ بورڈ",
+      "surfboard": "سرف بورڈ",
+      "tennis racket": "ٹینس ریکٹ",
+
+      "wine glass": "گلاس",
+
+      "fork": "کانٹا",
+      "knife": "چاقو",
+      "spoon": "چمچ",
+      "bowl": "پیالہ",
+
+      "banana": "کیلا",
+      "apple": "سیب",
+      "sandwich": "سینڈوچ",
+      "orange": "سنترہ",
+      "broccoli": "بروکلی",
+      "carrot": "گاجر",
+      "hot dog": "ہاٹ ڈاگ",
+      "pizza": "پیزا",
+      "donut": "ڈونٹ",
+      "cake": "کیک",
+
+
+      "chair": "کرسی",
+      "couch": "صوفہ",
+      "potted plant": "پودا",
+      "bed": "بستر",
+      "dining table": "میز",
+      "toilet": "ٹوائلٹ",
+
+
+      "tv": "ٹی وی",
+
+      "mouse": "ماؤس",
+      "remote": "ریموٹ",
+      "keyboard": "کی بورڈ",
+
+
+      // APPLIANCES
+      "microwave": "مائیکرو ویو",
+      "oven": "اوون",
+      "toaster": "ٹوسٹر",
+      "sink": "سنک",
+      "refrigerator": "فریج",
+
+      // MISC
+      "book": "کتاب",
+      "clock": "گھڑی",
+      "vase": "گلدان",
+      "scissors": "قینچی",
+      "teddy bear": "ٹیڈی بیئر",
+      "hair drier": "ہیئر ڈرائر",
+      "toothbrush": "ٹوتھ برش",
+
+      // STATUS
+      "detected": "موجود ہے",
+      "not found": "نہیں ملا",
+      "found":"مل گیا",
+
+      // DIRECTIONS
+      "left": "بائیں",
+      "right": "دائیں",
+      "center": "سامنے",
+      "far left": "بہت بائیں",
+      "far right": "بہت دائیں",
+
+      // DISTANCE
+      "very close": "بہت قریب",
+      "close": "قریب",
+      "medium": "درمیانہ فاصلہ",
+      "far": "دور",
+      "very far": "بہت دور",
+      "distant": "بہت زیادہ دور",
+
+      // WARNINGS
+      "object is about 1 meter away": "چیز تقریباً ایک میٹر دور ہے",
+      "object is about 2 meters away": "چیز تقریباً دو میٹر دور ہے",
+      "object is about 3-4 meters away": "چیز تقریباً تین سے چار میٹر دور ہے",
+      "object is about 5 meters away": "چیز تقریباً پانچ میٹر دور ہے",
+      "object is far away, about 8+ meters": "چیز بہت دور ہے",
+
+      // ACTIONS
+      "move forward slowly": "آہستہ آگے بڑھیں",
+      "move forward": "آگے بڑھیں",
+      "keep moving forward": "آگے بڑھتے رہیں",
+      "walk straight ahead": "سیدھا چلیں",
+      "move left": "بائیں جائیں",
+      "move right": "دائیں جائیں",
+      "move significantly to your left": "زیادہ بائیں جائیں",
+      "move significantly to your right": "زیادہ دائیں جائیں",
+      "stop": "رک جائیں",
+
+      // SEARCH
+      "move camera slowly left and right": "کیمرہ آہستہ بائیں دائیں گھمائیں",
+
+      // EXTRA
+      "you can reach out now": "اب آپ ہاتھ بڑھا سکتے ہیں",
+      "straight ahead": "سیدھا سامنے",
+    };
+
+    //  Sort longest first (VERY IMPORTANT)
+    final entries = map.entries.toList()
+      ..sort((a, b) => b.key.length.compareTo(a.key.length));
+
+    for (var entry in entries) {
+      result = result.replaceAll(entry.key, entry.value);
+    }
+
+    return result;
   }
 
 
@@ -605,76 +1383,6 @@ class _TargetScreenState extends State<TargetScreen>
   }
 
 
-  // Future<void> _sendFrameToBackend(
-  //     CameraImage image
-  //     ) async {
-  //
-  //   if(
-  //   _isProcessing ||
-  //       _currentTarget.isEmpty ||
-  //       isPaused
-  //   ) return;
-  //
-  //   _isProcessing=true;
-  //
-  //   try{
-  //
-  //     final base64Image=
-  //     await _convertImageToBase64(
-  //         image
-  //     );
-  //
-  //     if(base64Image==null){
-  //       _isProcessing=false;
-  //       return;
-  //     }
-  //
-  //     final response=
-  //     await http.post(
-  //       Uri.parse(_backendUrl),
-  //       headers:{
-  //         'Content-Type':'application/json'
-  //       },
-  //       body:jsonEncode({
-  //         'image':base64Image,
-  //         'target':_currentTarget,
-  //       }),
-  //     );
-  //
-  //     if(response.statusCode==200){
-  //
-  //       final data=
-  //       jsonDecode(
-  //           response.body
-  //       );
-  //
-  //       if(data['voice_message']!=null){
-  //         await _speak(
-  //             data['voice_message']
-  //         );
-  //       }
-  //
-  //       // if(
-  //       // data['meters']!=null &&
-  //       //     data['meters']<0.8
-  //       // ){
-  //       //   await _speak(
-  //       //       "Target is within reach"
-  //       //   );
-  //       //
-  //       //   setState((){
-  //       //     _currentTarget="";
-  //       //   });
-  //       // }
-  //     }
-  //   }
-  //   catch(e){
-  //     print(e);
-  //   }
-  //   finally{
-  //     _isProcessing=false;
-  //   }
-  // }
 
   Future<void> _sendFrameToBackend(
       CameraImage image
@@ -689,7 +1397,6 @@ class _TargetScreenState extends State<TargetScreen>
     _isProcessing = true;
 
     try{
-
       print("Sending frame...");
       print("Target: $_currentTarget");
 
@@ -717,22 +1424,6 @@ class _TargetScreenState extends State<TargetScreen>
       print("Status Code: ${response.statusCode}");
       print("Response Body: ${response.body}");
 
-      // if(response.statusCode==200){
-      //
-      //   final data =
-      //   jsonDecode(response.body);
-      //
-      //   // if(data['voice_message'] != null){
-      //   //   await _speak(
-      //   //       data['voice_message']
-      //   //   );
-      //   // }
-      //   final message = data['voice_message'] ?? data['message'];
-      //
-      //   if (message != null && message.toString().isNotEmpty) {
-      //     await _speak(message);
-      //   }
-      // }
       if (response.statusCode == 200) {
 
         final data = jsonDecode(response.body);
@@ -741,19 +1432,47 @@ class _TargetScreenState extends State<TargetScreen>
 
         if (message != null && message.toString().isNotEmpty) {
 
-          final now = DateTime.now();
+          // STOP camera processing first
+          _isProcessing = true;
 
-          // ✅ Check if 3 seconds have passed
-          if (_lastSpokenTime == null ||
-              now.difference(_lastSpokenTime!) > Duration(seconds: 3)) {
+          await _controller?.stopImageStream();
 
-            _lastSpokenTime = now;
+          setState(() {
+            _currentTarget = "";
+          });
 
-            await _speak(message);
+          print("FOUND MESSAGE: $message");
+
+          // await _speak(message);
+
+          String finalMessage = message;
+
+          // 🔥 Replace "object" with actual label
+          final label = data['label'] ?? _currentTarget;
+
+          if (label != null && label.toString().isNotEmpty) {
+            finalMessage = finalMessage.replaceAll("object", label);
           }
+
+          // 🔥 Then translate
+          if (_isUrduMode()) {
+            finalMessage = _translateToUrdu(finalMessage);
+          }
+
+          // 🟢 Wait if something is already speaking
+          while (_isSpeaking) {
+            await Future.delayed(const Duration(milliseconds: 100));
+          }
+
+          await _speak(finalMessage);
+          // restart camera stream
+          await _controller?.startImageStream(_processCameraImage);
+
+          _isProcessing = false;
+
+          _listenForTargetObject();
         }
       }
-
     }
     catch(e){
       print("BACKEND ERROR:");
@@ -807,11 +1526,10 @@ class _TargetScreenState extends State<TargetScreen>
     final strings=
     AppLocalizations.of(context);
 
-    await _speak(
-        strings.translate(
-            'target_stopped'
-        )
+    await _interruptAndSpeak(
+        strings.translate('target_stopped')
     );
+
 
     await Future.delayed(
         const Duration(
@@ -834,7 +1552,7 @@ class _TargetScreenState extends State<TargetScreen>
       _currentTarget="";
     });
 
-    await _speak(
+    await _interruptAndSpeak(
         _isUrduMode()
             ? "تلاش ری سیٹ ہو گئی"
             : "Search reset"

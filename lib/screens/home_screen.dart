@@ -156,22 +156,16 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   }
 
   void _navigateToDetection() {
-    _voiceService.pause();
     Navigator.pushNamed(context, '/detection');
   }
-
   void _navigateToTarget() {
-    _voiceService.pause();
     Navigator.pushNamed(context, '/target');
   }
-
   void _navigateToSettings() {
-    _voiceService.pause();
     Navigator.pushNamed(context, '/settings');
   }
 
   void _navigateToHelp() {
-    _voiceService.pause();
     Navigator.pushNamed(context, '/help');
   }
 
@@ -246,7 +240,6 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                                 ),
                                 onPressed: () {
                                   settings.tts.stop();
-                                  _voiceService.pause();
                                   Navigator.pushNamed(context, '/help');
                                 },
                               ),
