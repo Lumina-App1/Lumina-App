@@ -28,8 +28,9 @@ class VoiceCommandService {
   int _networkRetryCount = 0;
   Timer? _networkRetryTimer;
 
-  // Stack-based handler — top of stack is always the active screen
-  final List<Function(String)> _handlerStack = [];
+  // Single handler with owner ID — only the current screen owns the handler
+  Function(String)? _screenHandler;
+  String _screenHandlerOwner = '';
 
   Future<void> init(BuildContext context) async {
     _context = context;
@@ -99,17 +100,24 @@ class VoiceCommandService {
     print('🔄 Context updated');
   }
 
-  void setScreenCommands(Function(String) handler) {
-    _handlerStack.clear();
-    _handlerStack.add(handler);
-    print('📌 Handler pushed — stack depth: ${_handlerStack.length}');
+  /// Set the active screen handler. Only one handler is active at a time.
+  /// Owner string ensures only the correct screen can clear its own handler.
+  void setScreenCommands(Function(String) handler, {required String owner}) {
+    _screenHandler = handler;
+    _screenHandlerOwner = owner;
+    print('📌 Handler set — owner: $owner');
   }
-  /// Pop the screen handler when leaving the screen.
-  void clearScreenCommands() {
-    if (_handlerStack.isNotEmpty) {
-      _handlerStack.removeLast();
+
+  /// Clear the handler ONLY if this screen still owns it.
+  /// Prevents a disposing screen from wiping a newer screen's handler.
+  void clearScreenCommands({required String owner}) {
+    if (_screenHandlerOwner == owner) {
+      _screenHandler = null;
+      _screenHandlerOwner = '';
+      print('🗑️ Handler cleared — owner: $owner');
+    } else {
+      print('⚠️ Ignoring clear — owner mismatch: requested=$owner current=$_screenHandlerOwner');
     }
-    print('🗑️ Handler popped — stack depth: ${_handlerStack.length}');
   }
 
   bool _isUrduMode() {
@@ -143,7 +151,6 @@ class VoiceCommandService {
           print('❌ Speech error: ${error.errorMsg}');
           _isListening = false;
 
-          // Handle speech recognition errors silently
           if (error.errorMsg.contains('network') ||
               error.errorMsg.contains('connection')) {
             _handleNetworkError();
@@ -195,7 +202,6 @@ class VoiceCommandService {
           final String command = result.recognizedWords.trim();
           if (command.isNotEmpty) {
             print('🎤 RECOGNIZED: "$command"');
-            // check exit FIRST before routing to screen handlers
             if (_isExitCommand(command.toLowerCase())) {
               _handleExit();
             } else {
@@ -216,7 +222,6 @@ class VoiceCommandService {
     );
   }
 
-  // Exit detection
   bool _isExitCommand(String command) {
     return command.contains('exit from app') ||
         command.contains('close the app') ||
@@ -249,7 +254,6 @@ class VoiceCommandService {
     await SystemNavigator.pop();
   }
 
-  // Handle network errors with voice feedback
   void _handleConnectivityChange(List<ConnectivityResult> results) {
     final hasNetwork = results.first != ConnectivityResult.none;
 
@@ -318,14 +322,14 @@ class VoiceCommandService {
   }
 
   void _processCommand(String command) {
-    // Top of stack = current screen handler — always wins
-    if (_handlerStack.isNotEmpty) {
-      print('🎯 Routing to screen handler: "$command"');
-      _handlerStack.last(command);
+    // Active screen handler always wins
+    if (_screenHandler != null) {
+      print('🎯 Routing to screen handler [$_screenHandlerOwner]: "$command"');
+      _screenHandler!(command);
       return;
     }
 
-    // Global fallback — only runs when no screen handler is registered
+    // Global fallback — runs only when no screen has registered
     final navigatorState = navigatorKey.currentState;
     if (navigatorState == null) {
       print('❌ Navigator not ready');
@@ -341,29 +345,25 @@ class VoiceCommandService {
         Future.delayed(const Duration(milliseconds: 500), () {
           navigatorKey.currentState?.pushNamed('/detection');
         });
-      }
-      else if (command.contains('target') || command.contains('search')) {
+      } else if (command.contains('target') || command.contains('search')) {
         print('✅ MATCH: Target Search');
         _speak('Opening target search');
         Future.delayed(const Duration(milliseconds: 500), () {
           navigatorKey.currentState?.pushNamed('/target');
         });
-      }
-      else if (command.contains('setting')) {
+      } else if (command.contains('setting')) {
         print('✅ MATCH: Settings');
         _speak('Opening settings');
         Future.delayed(const Duration(milliseconds: 500), () {
           navigatorKey.currentState?.pushNamed('/settings');
         });
-      }
-      else if (command.contains('help')) {
+      } else if (command.contains('help')) {
         print('✅ MATCH: Help');
         _speak('Opening help');
         Future.delayed(const Duration(milliseconds: 500), () {
           navigatorKey.currentState?.pushNamed('/help');
         });
-      }
-      else if (command.contains('back')) {
+      } else if (command.contains('back')) {
         print('✅ MATCH: Back');
         if (navigatorState.canPop()) {
           _speak('Going back');
@@ -371,8 +371,7 @@ class VoiceCommandService {
             navigatorKey.currentState?.pop();
           });
         }
-      }
-      else if (command.contains('home') ||
+      } else if (command.contains('home') ||
           command.contains('return to home') ||
           command.contains('return to home screen') ||
           command == 'home screen') {
@@ -381,8 +380,7 @@ class VoiceCommandService {
         Future.delayed(const Duration(milliseconds: 500), () {
           navigatorKey.currentState?.popUntil((route) => route.isFirst);
         });
-      }
-      else {
+      } else {
         print('❌ No match for: "$command"');
       }
     } catch (e) {
@@ -417,7 +415,7 @@ class VoiceCommandService {
   void resume() {
     print('▶️ Voice service resumed');
     _isPaused = false;
-    _isSpeakingError = false; // ← ADD THIS LINE
+    _isSpeakingError = false;
     if (_isAvailable && !_isDestroyed && !_speech.isListening) {
       _scheduleRestart();
     }

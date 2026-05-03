@@ -33,6 +33,7 @@ class _DetectionScreenState extends State<DetectionScreen> with RouteAware {
   final int _processEveryNFrames = 15;
 
   late VoiceCommandService _voiceService;
+  FlutterTts? _tts; // ← ADD THIS
 
   @override
   void initState() {
@@ -40,7 +41,6 @@ class _DetectionScreenState extends State<DetectionScreen> with RouteAware {
     _voiceService = VoiceCommandService();
     _initializeCamera();
   }
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -48,31 +48,29 @@ class _DetectionScreenState extends State<DetectionScreen> with RouteAware {
     if (route is PageRoute) {
       routeObserver.subscribe(this, route);
     }
-
+    _tts = Provider.of<AppSettings>(context, listen: false).tts; // ← ADD
     if (ModalRoute.of(context)?.isCurrent == true) {
       _voiceService.updateContext(context);
-      _voiceService.setScreenCommands(_handleVoiceCommand);
+      _voiceService.setScreenCommands(_handleVoiceCommand, owner: 'detection'); // ← ADD owner
     }
   }
 
   @override
   void didPopNext() {
     _voiceService.updateContext(context);
-    _voiceService.setScreenCommands(_handleVoiceCommand);
+    _voiceService.setScreenCommands(_handleVoiceCommand, owner: 'detection');
     _voiceService.resume();
   }
 
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
-    _voiceService.clearScreenCommands();
+    _voiceService.clearScreenCommands(owner: 'detection'); // ← ADD owner
     _controller?.stopImageStream();
     _controller?.dispose();
-    final settings = Provider.of<AppSettings>(context, listen: false);
-    settings.tts.stop();
+    _tts?.stop(); // ← CHANGED
     super.dispose();
   }
-
   void _handleVoiceCommand(String command) {
     print('🔍 Detection command received: "$command"');
 
@@ -96,10 +94,12 @@ class _DetectionScreenState extends State<DetectionScreen> with RouteAware {
     else if (command.contains('resume') ||
         command.contains('continue') ||
         command.contains('chala doo') ||
+        command.contains(' dobara chala doo') ||
         command.contains('shuru kar doo') ||
         command.contains('dobara shuru') ||
         command.contains('detection resume') ||
         command.contains('چلا دو') ||
+        command.contains('دوبارہ چلا دو') ||
         command.contains('شروع کرو') ||
         command.contains('دوبارہ شروع کرو')) {
       if (isPaused) {
@@ -290,6 +290,8 @@ class _DetectionScreenState extends State<DetectionScreen> with RouteAware {
     await settings.tts.stop();
     await settings.tts.speak(strings.translate('detection_stopped'));
     await Future.delayed(const Duration(seconds: 2));
+    await settings.tts.stop();
+    await Future.delayed(const Duration(milliseconds: 300));
     if (mounted) Navigator.pop(context, true);
   }
 

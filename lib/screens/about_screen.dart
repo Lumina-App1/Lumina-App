@@ -6,6 +6,7 @@ import '../main.dart';
 import '../core/app_settings.dart';
 import '../core/app_localizations.dart';
 import '../services/voice_command_service.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 
 class AboutScreen extends StatefulWidget {
   final bool fromSettings;
@@ -34,6 +35,7 @@ class _AboutScreenState extends State<AboutScreen> with RouteAware {
 
   Completer<void>? _ttsCompleter;
   late VoiceCommandService _voiceService;
+  FlutterTts? _tts;
 
   @override
   void initState() {
@@ -41,7 +43,7 @@ class _AboutScreenState extends State<AboutScreen> with RouteAware {
     _voiceService = VoiceCommandService();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _voiceService.updateContext(context);
-      _voiceService.setScreenCommands(_handleVoiceCommand);
+      _voiceService.setScreenCommands(_handleVoiceCommand, owner: 'about');
     });
   }
 
@@ -53,7 +55,7 @@ class _AboutScreenState extends State<AboutScreen> with RouteAware {
       routeObserver.subscribe(this, route);
     }
     _voiceService.updateContext(context);
-    _voiceService.setScreenCommands(_handleVoiceCommand);
+    _voiceService.setScreenCommands(_handleVoiceCommand, owner: 'about');
 
     if (!_dataInitialized) {
       _initializeData();
@@ -65,16 +67,15 @@ class _AboutScreenState extends State<AboutScreen> with RouteAware {
   @override
   void didPopNext() {
     _voiceService.updateContext(context);
-    _voiceService.setScreenCommands(_handleVoiceCommand);
+    _voiceService.setScreenCommands(_handleVoiceCommand, owner: 'about');
     _voiceService.resume();
   }
 
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
-    // DELETE THIS LINE: _voiceService.clearScreenCommands();
-    final settings = Provider.of<AppSettings>(context, listen: false);
-    settings.tts.stop();
+    _voiceService.clearScreenCommands(owner: 'about'); // ADD owner param
+    _tts?.stop(); // use saved reference, not Provider.of
     _scrollController.dispose();
     super.dispose();
   }

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:speech_to_text/speech_to_text.dart';
 import '../main.dart';
 import '../core/app_settings.dart';
 import '../core/app_localizations.dart';
@@ -28,12 +27,12 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
   String _voiceStatus = "Initializing...";
   Timer? _statusTimer;
   bool _initialized = false;
+  FlutterTts? _tts;
 
   @override
   void initState() {
     super.initState();
     _voiceService = VoiceCommandService();
-
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _checkPermissionsAndInitialize();
     });
@@ -82,8 +81,6 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     });
   }
 
-
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -91,28 +88,46 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     if (route is PageRoute) {
       routeObserver.subscribe(this, route);
     }
+    _tts = Provider.of<AppSettings>(context, listen: false).tts;
     if (ModalRoute.of(context)?.isCurrent == true) {
       _voiceService.updateContext(context);
+      _voiceService.setScreenCommands(_handleVoiceCommand, owner: 'home');
     }
   }
 
   @override
   void didPopNext() {
-    // Refresh context FIRST, then resume — order matters
-    _voiceService.updateContext(context);
-    _voiceService.resume();
-    speakWelcome();
+    // Handled in each _navigate* .then() callback to ensure
+    // welcome fires correctly for all screens
   }
 
   @override
   void dispose() {
     _statusTimer?.cancel();
     routeObserver.unsubscribe(this);
-    // pause() not stop() — other screens may still need voice
+    _voiceService.clearScreenCommands(owner: 'home');
     _voiceService.pause();
-    final settings = Provider.of<AppSettings>(context, listen: false);
-    settings.tts.stop();
+    _tts?.stop();
     super.dispose();
+  }
+
+  void _handleVoiceCommand(String command) {
+    print('🏠 Home command: "$command"');
+    if (command.contains('object') || command.contains('detection')) {
+      _tts?.stop();
+      _navigateToDetection(announce: true);
+    } else if (command.contains('target') || command.contains('search')) {
+      _tts?.stop();
+      _navigateToTarget(announce: true);
+    } else if (command.contains('setting')) {
+      _tts?.stop();
+      _navigateToSettings(announce: true);
+    } else if (command.contains('help')) {
+      _tts?.stop();
+      _navigateToHelp(announce: true);
+    } else {
+      print('❌ No home match for: "$command"');
+    }
   }
 
   Future<void> speakWelcome() async {
@@ -155,18 +170,93 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
     );
   }
 
-  void _navigateToDetection() {
-    Navigator.pushNamed(context, '/detection');
-  }
-  void _navigateToTarget() {
-    Navigator.pushNamed(context, '/target');
-  }
-  void _navigateToSettings() {
-    Navigator.pushNamed(context, '/settings');
+  void _navigateToDetection({bool announce = false}) async {
+    _voiceService.pause();
+    await _tts?.stop();
+    if (announce) {
+      final settings = Provider.of<AppSettings>(context, listen: false);
+      final bool isUrdu = settings.language == 'Urdu';
+      await settings.tts.speak(
+          isUrdu ? 'آبجیکٹ ڈیٹیکشن کھل رہی ہے' : 'Opening object detection');
+      await Future.delayed(const Duration(milliseconds: 1500));
+    }
+    if (!mounted) return;
+    Navigator.pushNamed(context, '/detection').then((_) async {
+      if (!mounted) return;
+      _voiceService.updateContext(context);
+      _voiceService.setScreenCommands(_handleVoiceCommand, owner: 'home');
+      _voiceService.resume();
+      await _tts?.stop();
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (mounted) speakWelcome();
+    });
   }
 
-  void _navigateToHelp() {
-    Navigator.pushNamed(context, '/help');
+  void _navigateToTarget({bool announce = false}) async {
+    _voiceService.pause();
+    await _tts?.stop();
+    if (announce) {
+      final settings = Provider.of<AppSettings>(context, listen: false);
+      final bool isUrdu = settings.language == 'Urdu';
+      await settings.tts.speak(
+          isUrdu ? 'ٹارگٹ سرچ کھل رہی ہے' : 'Opening target search');
+      await Future.delayed(const Duration(milliseconds: 1500));
+    }
+    if (!mounted) return;
+    Navigator.pushNamed(context, '/target').then((_) async {
+      if (!mounted) return;
+      _voiceService.updateContext(context);
+      _voiceService.setScreenCommands(_handleVoiceCommand, owner: 'home');
+      _voiceService.resume();
+      await _tts?.stop();
+      await Future.delayed(const Duration(milliseconds: 400));
+      if (mounted) speakWelcome();
+    });
+  }
+
+  void _navigateToSettings({bool announce = false}) async {
+    _voiceService.pause();
+    await _tts?.stop();
+    if (announce) {
+      final settings = Provider.of<AppSettings>(context, listen: false);
+      final bool isUrdu = settings.language == 'Urdu';
+      await settings.tts.speak(
+          isUrdu ? 'سیٹنگز کھل رہی ہے' : 'Opening settings');
+      await Future.delayed(const Duration(milliseconds: 1500));
+    }
+    if (!mounted) return;
+    Navigator.pushNamed(context, '/settings').then((_) async {
+      if (!mounted) return;
+      _voiceService.updateContext(context);
+      _voiceService.setScreenCommands(_handleVoiceCommand, owner: 'home');
+      _voiceService.resume();
+      await _tts?.stop();
+      await Future.delayed(const Duration(milliseconds: 400));
+      if (mounted) speakWelcome();
+    });
+  }
+
+  void _navigateToHelp({bool announce = false}) async {
+    await _tts?.stop();
+    if (announce) {
+      _voiceService.pause();
+      final settings = Provider.of<AppSettings>(context, listen: false);
+      final bool isUrdu = settings.language == 'Urdu';
+      await settings.tts.speak(
+          isUrdu ? 'ہیلپ کھل رہی ہے' : 'Opening help');
+      await Future.delayed(const Duration(milliseconds: 1500));
+      _voiceService.resume();
+    }
+    if (!mounted) return;
+    Navigator.pushNamed(context, '/help').then((_) async {
+      if (!mounted) return;
+      _voiceService.updateContext(context);
+      _voiceService.setScreenCommands(_handleVoiceCommand, owner: 'home');
+      _voiceService.resume();
+      await _tts?.stop();
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (mounted) speakWelcome();
+    });
   }
 
   @override
@@ -238,10 +328,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                                   textDirection: TextDirection.ltr,
                                   child: Icon(Icons.help_outline_rounded, color: textColor, size: 24),
                                 ),
-                                onPressed: () {
-                                  settings.tts.stop();
-                                  Navigator.pushNamed(context, '/help');
-                                },
+                                onPressed: () => _navigateToHelp(announce: true),
                               ),
                             ),
                           ],
@@ -288,7 +375,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                               iconColor: Colors.white,
                               iconBgColor: const Color(0xFF4CAF50),
                               gradientColors: const [Color(0xFF66BB6A), Color(0xFF43A047)],
-                              onTap: _navigateToDetection,
+                              onTap: () => _navigateToDetection(announce: true),
                               isUrdu: isUrdu,
                             ),
                             const SizedBox(height: 24),
@@ -299,7 +386,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                               iconColor: Colors.white,
                               iconBgColor: const Color(0xFF2196F3),
                               gradientColors: const [Color(0xFF42A5F5), Color(0xFF1976D2)],
-                              onTap: _navigateToTarget,
+                              onTap: () => _navigateToTarget(announce: true),
                               isUrdu: isUrdu,
                             ),
                             const SizedBox(height: 24),
@@ -310,7 +397,7 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                               iconColor: Colors.white,
                               iconBgColor: const Color(0xFF9C27B0),
                               gradientColors: const [Color(0xFFAB47BC), Color(0xFF7B1FA2)],
-                              onTap: _navigateToSettings,
+                              onTap: () => _navigateToSettings(announce: true),
                               isUrdu: isUrdu,
                             ),
                             const SizedBox(height: 40),
@@ -351,7 +438,6 @@ class _HomeScreenState extends State<HomeScreen> with RouteAware {
                                     ],
                                   ),
                                   const SizedBox(height: 8),
-
                                   if (!voiceActive) ...[
                                     const SizedBox(height: 8),
                                     TextButton(

@@ -5,6 +5,7 @@ import '../main.dart';
 import '../core/app_settings.dart';
 import '../core/app_localizations.dart';
 import '../services/voice_command_service.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 
 class HelpScreen extends StatefulWidget {
   final bool fromSettings;
@@ -32,6 +33,7 @@ class _HelpScreenState extends State<HelpScreen> with RouteAware {
 
   Completer<void>? _ttsCompleter;
   late VoiceCommandService _voiceService;
+  FlutterTts? _tts;
 
   @override
   void initState() {
@@ -43,12 +45,13 @@ class _HelpScreenState extends State<HelpScreen> with RouteAware {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final route = ModalRoute.of(context);
+    _tts = Provider.of<AppSettings>(context, listen: false).tts;
     if (route is PageRoute) {
       routeObserver.subscribe(this, route);
     }
     if (ModalRoute.of(context)?.isCurrent == true) {
       _voiceService.updateContext(context);
-      _voiceService.setScreenCommands(_handleVoiceCommand);
+      _voiceService.setScreenCommands(_handleVoiceCommand, owner: 'help');
     }
     if (!_dataInitialized) {
       _initializeData();
@@ -60,16 +63,15 @@ class _HelpScreenState extends State<HelpScreen> with RouteAware {
   @override
   void didPopNext() {
     _voiceService.updateContext(context);
-    _voiceService.setScreenCommands(_handleVoiceCommand);
+    _voiceService.setScreenCommands(_handleVoiceCommand, owner: 'help');
     _voiceService.resume();
   }
 
   @override
   void dispose() {
     routeObserver.unsubscribe(this);
-    // DELETE THIS LINE: _voiceService.clearScreenCommands();
-    final settings = Provider.of<AppSettings>(context, listen: false);
-    settings.tts.stop();
+    _voiceService.clearScreenCommands(owner: 'help');
+    _tts?.stop();
     _scrollController.dispose();
     super.dispose();
   }
@@ -122,6 +124,7 @@ class _HelpScreenState extends State<HelpScreen> with RouteAware {
   Future<void> _goBack() async {
     await _stopSpeaking();
     final settings = Provider.of<AppSettings>(context, listen: false);
+    await settings.tts.stop();
     final strings = AppLocalizations.of(context);
     final bool isUrdu = settings.language == 'Urdu';
 
@@ -139,8 +142,9 @@ class _HelpScreenState extends State<HelpScreen> with RouteAware {
     await Future.delayed(const Duration(milliseconds: 200));
     await settings.tts.speak(message);
     await Future.delayed(Duration(milliseconds: isUrdu ? 2000 : 1800));
+    await settings.tts.stop();
+    await Future.delayed(const Duration(milliseconds: 300));
     if (mounted) Navigator.pop(context);
-    // Voice continues automatically
   }
 
   Widget _buildRtlText(String text,

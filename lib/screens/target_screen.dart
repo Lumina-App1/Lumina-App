@@ -558,11 +558,10 @@ class _TargetScreenState extends State<TargetScreen>
 
     _voiceService.updateContext(context);
 
-    _voiceService.clearScreenCommands();
 
-    _voiceService.setScreenCommands(
-      _handleVoiceCommand,
-    );
+
+    _voiceService.setScreenCommands(_handleVoiceCommand, owner: 'target'); // ← ADD owner
+// Remove the clearScreenCommands() call before it
 
     _voiceService.resume();
   }
@@ -573,11 +572,8 @@ class _TargetScreenState extends State<TargetScreen>
 
     _voiceService.updateContext(context);
 
-    _voiceService.clearScreenCommands();
-
-    _voiceService.setScreenCommands(
-      _handleVoiceCommand,
-    );
+    _voiceService.setScreenCommands(_handleVoiceCommand, owner: 'target'); // ← ADD owner
+// Remove the clearScreenCommands() call before it
 
     _voiceService.resume();
   }
@@ -590,7 +586,7 @@ class _TargetScreenState extends State<TargetScreen>
 
     _targetTimeout?.cancel();
 
-    _voiceService.clearScreenCommands();
+    _voiceService.clearScreenCommands(owner: 'target');
     _voiceService.resume();
 
     _controller?.stopImageStream();
@@ -1518,7 +1514,7 @@ class _TargetScreenState extends State<TargetScreen>
 
     _targetTimeout?.cancel();
 
-    _voiceService.clearScreenCommands();
+    _voiceService.clearScreenCommands(owner: 'target'); 
     _voiceService.resume();
 
     await _controller?.stopImageStream();

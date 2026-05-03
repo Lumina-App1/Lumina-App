@@ -17,7 +17,7 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
+class _SettingsScreenState extends State<SettingsScreen> {
   bool _ttsReady = false;
   bool _isNavigating = false;
   late VoiceCommandService _voiceService;
@@ -29,54 +29,33 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
     _initTts();
   }
 
-  // 1. Replace the _speak method:
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (ModalRoute.of(context)?.isCurrent == true) {
+      print('🔄 Settings: didChangeDependencies - registering handler');
+      _voiceService.updateContext(context);
+      _voiceService.setScreenCommands(_handleVoiceCommand, owner: 'settings');
+      _voiceService.resume();
+    }
+  }
+
+  @override
+  void dispose() {
+    _voiceService.clearScreenCommands(owner: 'settings');
+    final settings = Provider.of<AppSettings>(context, listen: false);
+    settings.tts.stop();
+    super.dispose();
+  }
+
   Future<void> _speak(String message) async {
     if (!_ttsReady) return;
     final settings = Provider.of<AppSettings>(context, listen: false);
     await settings.tts.stop();
     await Future.delayed(const Duration(milliseconds: 100));
     await settings.tts.speak(message);
-    // NO pause/resume - mic stays active
   }
 
-// 2. Replace didChangeDependencies:
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final route = ModalRoute.of(context);
-    if (route is PageRoute) {
-      routeObserver.subscribe(this, route);
-    }
-    if (ModalRoute.of(context)?.isCurrent == true) {
-      print('🔄 Settings: didChangeDependencies - registering handler');
-      _voiceService.updateContext(context);
-      _voiceService.clearScreenCommands();
-      _voiceService.setScreenCommands(_handleVoiceCommand);
-      _voiceService.resume();
-    }
-  }
-
-  @override
-  void didPopNext() {
-    print('🔄 Settings: didPopNext called - re-registering handler');
-    _isNavigating = false;
-
-    Future.delayed(const Duration(milliseconds: 200), () {  // ← delay beats dispose()
-      if (!mounted) return;
-      _voiceService.clearScreenCommands();
-      _voiceService.updateContext(context);
-      _voiceService.setScreenCommands(_handleVoiceCommand);
-      _voiceService.resume();
-    });
-
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) _announceSettings();
-    });
-  }
-
-
-// 4. Replace _goBack:
   Future<void> _goBack() async {
     if (_isNavigating) return;
     _isNavigating = true;
@@ -91,7 +70,6 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
     if (mounted) Navigator.pop(context);
   }
 
-// 5. Replace _openPage:
   Future<void> _openPage(Widget page, String message, FromPage from) async {
     if (_isNavigating) return;
     _isNavigating = true;
@@ -106,16 +84,14 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
 
     await Navigator.push(context, MaterialPageRoute(builder: (_) => page));
 
+    // Re-register settings handler after returning from child screen
     _isNavigating = false;
-  }
-
-  @override
-  void dispose() {
-    routeObserver.unsubscribe(this);
-    _voiceService.clearScreenCommands();
-    final settings = Provider.of<AppSettings>(context, listen: false);
-    settings.tts.stop();
-    super.dispose();
+    if (!mounted) return;
+    _voiceService.setScreenCommands(_handleVoiceCommand, owner: 'settings');
+    _voiceService.resume();
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) _announceSettings();
+    });
   }
 
   void _handleVoiceCommand(String command) {
@@ -138,7 +114,6 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
       } else {
         _speak('Language is already English');
       }
-
     } else if (command.contains('urdu') ||
         command.contains('اردو') ||
         command.contains('زبان اردو') ||
@@ -283,33 +258,31 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
           ? 'Large text enabled'
           : 'Large text disabled');
 
-      // ── NAVIGATION — about first, then help, then home/back ───
-      // IMPORTANT: help and about checked before home/back to avoid
-      // partial match conflicts
+      // ── NAVIGATION ────────────────────────────────────────────
     } else if (command.contains('about') ||
         command.contains('about page') ||
         command.contains('open about') ||
         command.contains('abaout') ||
         command.contains('ابائوٹ')) {
       print('✅ Opening about from settings');
+      final bool isUrdu = Provider.of<AppSettings>(context, listen: false).language == 'Urdu';
       _openPage(
         const AboutScreen(),
-        'Opening about page',
+        isUrdu ? 'ابائوٹ کھل رہی ہے' : 'Opening about page',
         FromPage.about,
       );
-
     } else if (command.contains('help') ||
         command.contains('help page') ||
         command.contains('open help') ||
         command.contains('مدد') ||
         command.contains('help screen')) {
       print('✅ Opening help from settings');
+      final bool isUrdu = Provider.of<AppSettings>(context, listen: false).language == 'Urdu';
       _openPage(
         const HelpScreen(fromSettings: true),
-        'Opening help page',
+        isUrdu ? 'ہیلپ کھل رہی ہے' : 'Opening help page',
         FromPage.help,
       );
-
     } else if (command.contains('return to home screen') ||
         command.contains('return to home') ||
         command.contains('go to home screen') ||
@@ -376,7 +349,6 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
       _announceSettings();
     });
   }
-
 
   Future<void> _announceSettings() async {
     if (!_ttsReady || !mounted) return;
@@ -492,7 +464,6 @@ class _SettingsScreenState extends State<SettingsScreen> with RouteAware {
                     horizontal: 20, vertical: 20),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
-
                     // Voice commands hint box
                     Container(
                       padding: const EdgeInsets.all(14),
